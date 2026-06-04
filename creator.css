@@ -1,0 +1,287 @@
+:root {
+  color-scheme: dark;
+  --bg: #101411;
+  --panel: #172018;
+  --panel-2: #1f2a20;
+  --text: #e8f1e5;
+  --muted: #a9b9a3;
+  --line: #32402f;
+  --accent: #272727;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.4 system-ui, sans-serif;
+}
+
+button, input, select, textarea {
+  font: inherit;
+}
+
+button {
+  border: 1px solid #5d7a52;
+  border-radius: 6px;
+  background: #263720;
+  color: var(--text);
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+button:hover {
+  border-color: var(--accent);
+}
+
+.shell {
+  width: min(1500px, 100%);
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+h1, h2, p {
+  margin: 0;
+}
+
+h1 {
+  font-size: 24px;
+}
+
+h2 {
+  font-size: 15px;
+  margin-bottom: 10px;
+}
+
+.topbar p, .hint {
+  color: var(--muted);
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.tab.active {
+  border-color: var(--accent);
+  background: #314926;
+}
+
+.workspace {
+  display: block;
+}
+
+.tool {
+  display: none;
+}
+
+.tool.active {
+  display: block;
+}
+
+.outputs {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+}
+
+.outputs.in-tab {
+  margin-top: 0;
+}
+
+.panel {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 12px;
+  min-width: 0;
+}
+
+#sprite, #screen, #scene {
+  width: 100%;
+  image-rendering: pixelated;
+  background: #050705;
+  border: 1px solid var(--line);
+}
+
+#screen {
+  margin-top: 12px;
+}
+
+.palette {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 6px;
+  margin: 10px 0;
+}
+
+.art-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr 120px;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.swatch {
+  aspect-ratio: 1;
+  border: 2px solid #000;
+  border-radius: 4px;
+}
+
+.swatch.active {
+  border-color: #fff;
+}
+
+textarea {
+  width: 100%;
+  height: 520px;
+  resize: vertical;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #0b100c;
+  color: var(--text);
+  padding: 10px;
+  font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+#object-code {
+  height: 260px;
+}
+
+.tool-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.scene-layout {
+  display: grid;
+  grid-template-columns: minmax(360px, 512px) minmax(280px, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.code-layout {
+  display: grid;
+  grid-template-columns: 240px minmax(360px, 1fr);
+  gap: 12px;
+}
+
+.block-options {
+  max-width: 260px;
+}
+
+.blocks-layout {
+  display: grid;
+  grid-template-columns: minmax(480px, 2fr) minmax(300px, 1fr);
+  gap: 12px;
+  min-height: 620px;
+}
+
+#blockly-area {
+  min-height: 620px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+  background: #0b100c;
+}
+
+#blockly-output {
+  min-height: 620px;
+  max-height: 620px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px;
+  background: #0b100c;
+}
+
+.file-tree {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #0b100c;
+  min-height: 520px;
+  padding: 8px;
+}
+
+.file-item {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-bottom: 4px;
+  padding: 6px 8px;
+}
+
+.file-item.active {
+  border-color: var(--accent);
+  background: #314926;
+}
+
+#scene {
+  max-width: 512px;
+}
+
+label {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 10px;
+  color: var(--muted);
+}
+
+input, select {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-2);
+  color: var(--text);
+  padding: 6px;
+}
+
+pre {
+  min-height: 220px;
+  max-height: 420px;
+  overflow: auto;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: #dcebd6;
+}
+
+@media (max-width: 1050px) {
+  .scene-layout, .code-layout, .blocks-layout, .outputs {
+    grid-template-columns: 1fr;
+  }
+
+  .topbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .art-controls {
+    grid-template-columns: 1fr;
+  }
+}
