@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Unicorn-8</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/unicorn.js/1.0-rc3/unicorn.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/acorn@8/dist/acorn.min.js"></script>
+  <script src="src/app.js" defer></script>
+</head>
+<body>
+  <main>
+    <h1>UNICORN-8</h1>
+    <p>PICO-8-style remake using Canvas 2D, image-container system media, and non-bootable FAT16 cartridge disks.</p>
+    <p>System: <code>.u8sys.img</code> · Cart disk: <code>.u8cart.img</code></p>
+    <p><a href="./creator.html">Open Unicorn-8 Creator</a></p>
+
+    <section>
+      <canvas id="screen" width="512" height="512"></canvas>
+      <p>
+        <button id="reboot">Reboot Cart</button>
+        <button id="pause">Pause</button>
+        <button id="export-system">Export System</button>
+        <button id="export-cart">Export Cart</button>
+      </p>
+    </section>
+
+    <section>
+      <h2>Load system image</h2>
+      <p>The system image is the bootable .img-style media.</p>
+      <input id="system-file" type="file" accept=".img,.u8sys.img,application/octet-stream">
+      <button id="load-system">Boot</button>
+      <pre id="system-info"></pre>
+    </section>
+
+    <section>
+      <h2>Load cartridge image</h2>
+      <p>Cartridges are non-bootable disk images with an MBR partition containing a FAT16 cart filesystem.</p>
+      <input id="file" type="file" accept=".img,.u8cart.img,application/octet-stream">
+      <button id="load-cart">Load</button>
+      <pre id="cart-info"></pre>
+    </section>
+
+    <section>
+      <h2>Built-ins</h2>
+      <button id="reset-builtins">Rebuild Built-ins</button>
+    </section>
+
+    <section>
+      <h2>Controls</h2>
+      <p>Arrow/WASD move · Z/J/Space jump/O · X/K/Enter action/X</p>
+    </section>
+
+    <section>
+      <h2>Log</h2>
+      <pre id="log"></pre>
+    </section>
+  </main>
+</body>
+</html>

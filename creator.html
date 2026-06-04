@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Unicorn-8 Creator</title>
+  <link rel="stylesheet" href="src/creator.css">
+  <script src="https://cdn.jsdelivr.net/npm/acorn@8/dist/acorn.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/astring@1.9.0/dist/astring.min.js"></script>
+  <script src="src/creator.js" defer></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <h1>Unicorn-8 Creator</h1>
+        <p>Pixel art, sound, PG BASIC, JavaScript, assembly, bytecode, and non-bootable FAT16 cart images.</p>
+      </div>
+      <div class="actions">
+        <button id="compile">Compile</button>
+        <button id="run">Run</button>
+        <button id="export">Export .img</button>
+      </div>
+    </header>
+
+    <nav class="tabs" aria-label="Creator tools">
+      <button class="tab active" data-tab="art">Pixel Art</button>
+      <button class="tab" data-tab="scene">Scene</button>
+      <button class="tab" data-tab="sound">Sound</button>
+      <button class="tab" data-tab="code">Code</button>
+      <button class="tab" data-tab="blocks">Blocks</button>
+      <button class="tab" data-tab="build">Build</button>
+    </nav>
+
+    <section class="workspace">
+      <section class="panel tool active" id="tool-art">
+        <div class="tool-head">
+          <h2>Pixel Art</h2>
+          <div class="actions">
+            <button id="new-sprite">New Sprite</button>
+            <button id="new-frame">Add Frame</button>
+            <button id="delete-frame">Delete Frame</button>
+          </div>
+        </div>
+        <div class="art-controls">
+          <label>Sprite <select id="sprite-select"></select></label>
+          <label>Frame <select id="frame-select"></select></label>
+          <label>FPS <input id="sprite-fps" type="number" min="1" max="30" value="8"></label>
+        </div>
+        <canvas id="sprite" width="256" height="256"></canvas>
+        <div id="palette" class="palette"></div>
+        <p class="hint">Each sprite can have multiple 16x16 animation frames.</p>
+      </section>
+
+      <section class="panel tool scene-tool" id="tool-scene">
+        <div class="tool-head">
+          <h2>Scene Editor</h2>
+          <div class="actions">
+            <button id="add-object">Add Sprite</button>
+            <button id="delete-object">Delete</button>
+          </div>
+        </div>
+        <div class="scene-layout">
+          <canvas id="scene" width="512" height="512"></canvas>
+          <aside>
+            <label>Name <input id="object-name" type="text"></label>
+            <label>X <input id="object-x" type="number" min="0" max="127"></label>
+            <label>Y <input id="object-y" type="number" min="0" max="127"></label>
+            <label>Sprite <select id="object-sprite"></select></label>
+            <label>Object PG BASIC <textarea id="object-code" spellcheck="false"></textarea></label>
+            <p class="hint">Use LOCAL INIT, LOCAL UPDATE, and LOCAL DRAW. Each placed sprite runs as its own cooperative thread, even when scripts match.</p>
+          </aside>
+        </div>
+      </section>
+
+      <section class="panel tool code-panel" id="tool-code">
+        <div class="tool-head">
+          <h2>PG BASIC Files</h2>
+          <div class="actions">
+            <button id="new-bas">New .bas</button>
+            <button id="delete-bas">Delete</button>
+          </div>
+        </div>
+        <div class="code-layout">
+          <aside class="file-tree">
+            <div id="bas-files"></div>
+          </aside>
+          <section>
+            <label>Path <input id="bas-path" type="text" value="main.bas"></label>
+            <textarea id="basic" spellcheck="false"></textarea>
+            <p class="hint">Use <code>IMPORT "actors/player.bas"</code> to include another PG BASIC file.</p>
+          </section>
+        </div>
+      </section>
+
+      <section class="panel tool sound-panel" id="tool-sound">
+        <h2>Sound</h2>
+        <label>Note <input id="note" type="range" min="24" max="84" value="52"></label>
+        <label>Duration <input id="duration" type="range" min="0.04" max="0.8" step="0.01" value="0.14"></label>
+        <label>Wave
+          <select id="wave">
+            <option>square</option>
+            <option>triangle</option>
+            <option>sawtooth</option>
+            <option>sine</option>
+          </select>
+        </label>
+        <button id="play-sound">Play Sound</button>
+        <canvas id="screen" width="128" height="128"></canvas>
+      </section>
+
+      <section class="panel tool" id="tool-blocks">
+        <div class="tool-head">
+          <h2>Blockly PG BASIC Plugin</h2>
+          <div class="actions">
+            <button id="activate-blockly">Activate Blockly</button>
+            <button id="insert-blocks">Insert PG BASIC</button>
+          </div>
+        </div>
+        <div class="block-options">
+          <label>Insert target
+            <select id="block-target">
+              <option value="file">Current .bas file</option>
+              <option value="object">Selected scene object</option>
+            </select>
+          </label>
+        </div>
+        <div class="blocks-layout">
+          <div id="blockly-area"></div>
+          <pre id="blockly-output"></pre>
+        </div>
+      </section>
+
+      <section class="panel tool" id="tool-build">
+        <h2>Build Output</h2>
+        <div class="outputs in-tab">
+          <div>
+            <h2>JavaScript</h2>
+            <pre id="js-out"></pre>
+          </div>
+          <div>
+            <h2>Assembly</h2>
+            <pre id="asm-out"></pre>
+          </div>
+          <div>
+            <h2>Log</h2>
+            <pre id="log"></pre>
+          </div>
+        </div>
+      </section>
+    </section>
+  </main>
+</body>
+</html>
