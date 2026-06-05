@@ -1,0 +1,655 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Unicorn-8 Cart Gallery</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #111318;
+      --panel: #1a1d24;
+      --panel-2: #222733;
+      --text: #f4f0e8;
+      --muted: #aeb7c6;
+      --line: #363d4d;
+      --accent: #29adff;
+      --accent-2: #00e436;
+      --danger: #ff004d;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    button, input, textarea {
+      font: inherit;
+    }
+
+    button {
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      color: var(--text);
+      min-height: 38px;
+      padding: 0 12px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    button.primary {
+      border-color: transparent;
+      background: var(--accent);
+      color: #061019;
+      font-weight: 700;
+    }
+
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    input, textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      background: #0d0f14;
+      color: var(--text);
+      padding: 10px;
+      border-radius: 6px;
+    }
+
+    textarea {
+      min-height: 88px;
+      resize: vertical;
+    }
+
+    label {
+      display: grid;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    header {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 28px clamp(16px, 4vw, 44px) 18px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    h1, h2, h3, p {
+      margin: 0;
+    }
+
+    h1 {
+      font-size: clamp(28px, 5vw, 48px);
+      letter-spacing: 0;
+    }
+
+    header p, .hint, .empty {
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: minmax(280px, 380px) minmax(0, 1fr);
+      gap: 18px;
+      padding: 18px clamp(16px, 4vw, 44px) 44px;
+    }
+
+    .stack {
+      display: grid;
+      gap: 14px;
+      align-content: start;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+    }
+
+    .panel h2 {
+      font-size: 18px;
+      margin-bottom: 12px;
+    }
+
+    details.panel summary {
+      cursor: pointer;
+      font-weight: 800;
+      list-style-position: inside;
+    }
+
+    details.panel .form-grid {
+      margin-top: 12px;
+    }
+
+    .form-grid {
+      display: grid;
+      gap: 12px;
+    }
+
+    .row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .status {
+      min-height: 22px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.4;
+      white-space: pre-wrap;
+    }
+
+    .status.good { color: var(--accent-2); }
+    .status.bad { color: var(--danger); }
+
+    .gallery-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .gallery {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 14px;
+    }
+
+    .cart-card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      min-width: 0;
+    }
+
+    .cart-preview {
+      display: grid;
+      place-items: center;
+      min-height: 160px;
+      background: #0d0f14;
+      border-bottom: 1px solid var(--line);
+      padding: 12px;
+    }
+
+    .cart-chip {
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      padding: 8px 10px;
+      border-radius: 6px;
+      font-weight: 800;
+      text-transform: uppercase;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .cart-body {
+      display: grid;
+      gap: 10px;
+      padding: 14px;
+    }
+
+    .cart-body h3 {
+      font-size: 18px;
+      overflow-wrap: anywhere;
+    }
+
+    .meta {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .comments {
+      display: grid;
+      gap: 8px;
+      border-top: 1px solid var(--line);
+      padding-top: 10px;
+    }
+
+    .comment {
+      background: #11151d;
+      border: 1px solid #2b3241;
+      border-radius: 6px;
+      padding: 8px;
+    }
+
+    .comment b {
+      display: block;
+      margin-bottom: 3px;
+    }
+
+    dialog {
+      width: min(760px, calc(100vw - 28px));
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      color: var(--text);
+      padding: 0;
+    }
+
+    dialog::backdrop {
+      background: rgba(0, 0, 0, 0.68);
+    }
+
+    .dialog-inner {
+      display: grid;
+      gap: 14px;
+      padding: 16px;
+    }
+
+    @media (max-width: 850px) {
+      header {
+        align-items: start;
+        flex-direction: column;
+      }
+
+      main {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="stack">
+      <h1>Unicorn-8 Cart Gallery</h1>
+      <p>Publish `.img` and `.u8cart.img` experiments with captions, then talk about them.</p>
+    </div>
+    <div class="row">
+      <a href="index.html"><button>Open Console</button></a>
+      <a href="creator.html"><button>Open Creator</button></a>
+    </div>
+  </header>
+
+  <main>
+    <aside class="stack">
+      <details class="panel" id="setup-panel" hidden>
+        <summary>Worker Setup</summary>
+        <div class="form-grid">
+          <p class="hint">Optional setup panel. You can hide this from the page by filling the embedded Worker config in the script.</p>
+          <label>Worker URL
+            <input id="api-endpoint" placeholder="https://unicorn8-gallery.YOUR_SUBDOMAIN.workers.dev">
+          </label>
+          <label>API key, if your Worker uses one
+            <input id="api-key" type="password" autocomplete="off" placeholder="Optional Worker API key">
+          </label>
+          <label>Data source
+            <input id="data-source" value="HomePage">
+          </label>
+          <label>Database
+            <input id="database" value="homepage">
+          </label>
+          <div class="row">
+            <button id="save-settings" class="primary">Save Settings</button>
+            <button id="test-settings">Test</button>
+          </div>
+          <p id="settings-status" class="status"></p>
+        </div>
+      </details>
+
+      <section class="panel">
+        <h2>Publish Cart</h2>
+        <div class="form-grid">
+          <label>Cart image
+            <input id="cart-file" type="file" accept=".img,.u8cart.img,application/octet-stream">
+          </label>
+          <label>Title
+            <input id="cart-title" maxlength="80" placeholder="Flappy Example">
+          </label>
+          <label>Caption / description
+            <textarea id="cart-caption" maxlength="900" placeholder="What does this cart do? Controls? Anything fun about it?"></textarea>
+          </label>
+          <button id="publish" class="primary">Publish</button>
+          <p id="publish-status" class="status"></p>
+        </div>
+      </section>
+    </aside>
+
+    <section>
+      <div class="gallery-head">
+        <div>
+          <h2>Published Images</h2>
+          <p class="hint">Gallery data lives in a Cloudflare Worker KV namespace.</p>
+        </div>
+        <button id="refresh">Refresh</button>
+      </div>
+      <div id="gallery" class="gallery">
+        <p class="empty">Add your Worker URL in the embedded config, then publish or refresh.</p>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="comment-dialog">
+    <div class="dialog-inner">
+      <div class="gallery-head">
+        <h2 id="comment-title">Comments</h2>
+        <button id="close-dialog">Close</button>
+      </div>
+      <div id="dialog-comments" class="comments"></div>
+      <label>Your name
+        <input id="comment-author" maxlength="40" placeholder="Guest">
+      </label>
+      <label>Comment
+        <textarea id="comment-body" maxlength="700" placeholder="Say something about this cart..."></textarea>
+      </label>
+      <button id="post-comment" class="primary">Post Comment</button>
+      <p id="comment-status" class="status"></p>
+    </div>
+  </dialog>
+
+  <script>
+    // Put your deployed Cloudflare Worker URL here if you want it hidden from the visible page.
+    // If you set an API_KEY secret on the Worker, put the same value in apiKey.
+    const EMBEDDED_WORKER_CONFIG = {
+      endpoint: '',
+      apiKey: '',
+      dataSource: '',
+      database: '',
+    };
+
+    const COLLECTION_CARTS = 'images';
+    const COLLECTION_COMMENTS = 'comments';
+    const STORE_KEY = 'u8.homepage.worker';
+    const $ = selector => document.querySelector(selector);
+
+    let settings = loadSettings();
+    let activeCart = null;
+
+    function loadSettings() {
+      const embedded = {
+        endpoint: EMBEDDED_WORKER_CONFIG.endpoint.trim().replace(/\/+$/, ''),
+        apiKey: EMBEDDED_WORKER_CONFIG.apiKey.trim(),
+        dataSource: EMBEDDED_WORKER_CONFIG.dataSource.trim(),
+        database: EMBEDDED_WORKER_CONFIG.database.trim(),
+      };
+      if (embedded.endpoint) return embedded;
+      try {
+        return JSON.parse(localStorage.getItem(STORE_KEY)) || {};
+      } catch {
+        return {};
+      }
+    }
+
+    function saveSettings() {
+      settings = {
+        endpoint: $('#api-endpoint').value.trim().replace(/\/+$/, ''),
+        apiKey: $('#api-key').value.trim(),
+        dataSource: $('#data-source').value.trim() || 'HomePage',
+        database: $('#database').value.trim() || 'homepage',
+      };
+      localStorage.setItem(STORE_KEY, JSON.stringify(settings));
+    }
+
+    function fillSettings() {
+      $('#api-endpoint').value = settings.endpoint || '';
+      $('#api-key').value = settings.apiKey || '';
+      $('#data-source').value = settings.dataSource || 'HomePage';
+      $('#database').value = settings.database || 'homepage';
+    }
+
+    function setStatus(el, text, mode = '') {
+      el.textContent = text;
+      el.className = `status ${mode}`.trim();
+    }
+
+    function requireSettings() {
+      if (!settings.endpoint) {
+        throw new Error('Add your Cloudflare Worker URL in EMBEDDED_WORKER_CONFIG.');
+      }
+    }
+
+    async function atlas(action, body) {
+      requireSettings();
+      const response = await fetch(`${settings.endpoint}/action/${action}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(settings.apiKey ? { 'api-key': settings.apiKey } : {}),
+        },
+        body: JSON.stringify({
+          ...body,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || data.message || `${response.status} ${response.statusText}`);
+      }
+      return data;
+    }
+
+    function idString(id) {
+      if (!id) return '';
+      if (typeof id === 'string') return id;
+      if (id.$oid) return id.$oid;
+      return String(id);
+    }
+
+    function niceDate(value) {
+      const date = value?.$date ? new Date(value.$date) : new Date(value);
+      return Number.isNaN(date.getTime()) ? '' : date.toLocaleString();
+    }
+
+    function bytesToDataUrl(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.addEventListener('load', () => resolve(reader.result));
+        reader.addEventListener('error', () => reject(reader.error));
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function downloadDataUrl(dataUrl, filename) {
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = filename || 'cart.u8cart.img';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+
+    async function publishCart() {
+      const status = $('#publish-status');
+      const file = $('#cart-file').files[0];
+      if (!file) {
+        setStatus(status, 'Choose a .img or .u8cart.img first.', 'bad');
+        return;
+      }
+      if (file.size > 12 * 1024 * 1024) {
+        setStatus(status, 'This demo stores files in Worker KV as data URLs, so keep carts under 12 MB.', 'bad');
+        return;
+      }
+
+      try {
+        saveSettings();
+        setStatus(status, 'Reading image and publishing...');
+        const dataUrl = await bytesToDataUrl(file);
+        const now = new Date().toISOString();
+        await atlas('insertOne', {
+          collection: COLLECTION_CARTS,
+          document: {
+            title: $('#cart-title').value.trim() || file.name,
+            caption: $('#cart-caption').value.trim(),
+            filename: file.name,
+            mime: file.type || 'application/octet-stream',
+            size: file.size,
+            dataUrl,
+            createdAt: now,
+          },
+        });
+        $('#cart-file').value = '';
+        $('#cart-title').value = '';
+        $('#cart-caption').value = '';
+        setStatus(status, 'Published.', 'good');
+        await loadGallery();
+      } catch (error) {
+        setStatus(status, error.message, 'bad');
+      }
+    }
+
+    async function loadGallery() {
+      const gallery = $('#gallery');
+      gallery.innerHTML = '<p class="empty">Loading...</p>';
+      try {
+        saveSettings();
+        const data = await atlas('find', {
+          collection: COLLECTION_CARTS,
+          filter: {},
+          sort: { createdAt: -1 },
+          limit: 60,
+        });
+        const docs = data.documents || [];
+        if (!docs.length) {
+          gallery.innerHTML = '<p class="empty">No carts published yet.</p>';
+          return;
+        }
+        gallery.textContent = '';
+        for (const doc of docs) gallery.appendChild(cartCard(doc));
+      } catch (error) {
+        gallery.innerHTML = `<p class="empty">${escapeHtml(error.message)}</p>`;
+      }
+    }
+
+    function cartCard(doc) {
+      const id = idString(doc._id);
+      const card = document.createElement('article');
+      card.className = 'cart-card';
+      card.innerHTML = `
+        <div class="cart-preview"><div class="cart-chip">${escapeHtml(doc.filename || 'cart.img')}</div></div>
+        <div class="cart-body">
+          <h3>${escapeHtml(doc.title || 'Untitled cart')}</h3>
+          <p>${escapeHtml(doc.caption || 'No description yet.')}</p>
+          <p class="meta">${escapeHtml(doc.filename || '')} · ${formatBytes(doc.size || 0)} · ${escapeHtml(niceDate(doc.createdAt))}</p>
+          <div class="row">
+            <button data-action="download">Download</button>
+            <button data-action="comments">Talk About It</button>
+          </div>
+        </div>
+      `;
+      card.querySelector('[data-action="download"]').addEventListener('click', () => downloadDataUrl(doc.dataUrl, doc.filename));
+      card.querySelector('[data-action="comments"]').addEventListener('click', () => openComments({ id, title: doc.title || doc.filename || 'Cart' }));
+      return card;
+    }
+
+    async function openComments(cart) {
+      activeCart = cart;
+      $('#comment-title').textContent = `Comments: ${cart.title}`;
+      $('#comment-status').textContent = '';
+      $('#comment-dialog').showModal();
+      await loadComments();
+    }
+
+    async function loadComments() {
+      const root = $('#dialog-comments');
+      root.innerHTML = '<p class="empty">Loading comments...</p>';
+      try {
+        const data = await atlas('find', {
+          collection: COLLECTION_COMMENTS,
+          filter: { imageId: activeCart.id },
+          sort: { createdAt: 1 },
+          limit: 100,
+        });
+        const docs = data.documents || [];
+        if (!docs.length) {
+          root.innerHTML = '<p class="empty">No comments yet.</p>';
+          return;
+        }
+        root.textContent = '';
+        for (const doc of docs) {
+          const item = document.createElement('div');
+          item.className = 'comment';
+          item.innerHTML = `<b>${escapeHtml(doc.author || 'Guest')}</b><p>${escapeHtml(doc.body || '')}</p><p class="meta">${escapeHtml(niceDate(doc.createdAt))}</p>`;
+          root.appendChild(item);
+        }
+      } catch (error) {
+        root.innerHTML = `<p class="empty">${escapeHtml(error.message)}</p>`;
+      }
+    }
+
+    async function postComment() {
+      const status = $('#comment-status');
+      const body = $('#comment-body').value.trim();
+      if (!body) {
+        setStatus(status, 'Write a comment first.', 'bad');
+        return;
+      }
+      try {
+        await atlas('insertOne', {
+          collection: COLLECTION_COMMENTS,
+          document: {
+            imageId: activeCart.id,
+            author: $('#comment-author').value.trim() || 'Guest',
+            body,
+            createdAt: new Date().toISOString(),
+          },
+        });
+        $('#comment-body').value = '';
+        setStatus(status, 'Posted.', 'good');
+        await loadComments();
+      } catch (error) {
+        setStatus(status, error.message, 'bad');
+      }
+    }
+
+    async function testSettings() {
+      const status = $('#settings-status');
+      try {
+        saveSettings();
+        await atlas('findOne', { collection: COLLECTION_CARTS, filter: {} });
+        setStatus(status, 'Connected to Worker.', 'good');
+      } catch (error) {
+        setStatus(status, error.message, 'bad');
+      }
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>"']/g, char => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+      }[char]));
+    }
+
+    function formatBytes(bytes) {
+      if (!bytes) return '0 B';
+      const units = ['B', 'KB', 'MB'];
+      let value = bytes;
+      let i = 0;
+      while (value >= 1024 && i < units.length - 1) {
+        value /= 1024;
+        i++;
+      }
+      return `${value.toFixed(i ? 1 : 0)} ${units[i]}`;
+    }
+
+    fillSettings();
+    $('#save-settings').addEventListener('click', () => {
+      saveSettings();
+      setStatus($('#settings-status'), 'Saved locally in this browser.', 'good');
+    });
+    $('#test-settings').addEventListener('click', testSettings);
+    $('#publish').addEventListener('click', publishCart);
+    $('#refresh').addEventListener('click', loadGallery);
+    $('#close-dialog').addEventListener('click', () => $('#comment-dialog').close());
+    $('#post-comment').addEventListener('click', postComment);
+    if (settings.endpoint) loadGallery();
+  </script>
+</body>
+</html>

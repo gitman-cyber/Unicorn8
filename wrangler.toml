@@ -1,0 +1,7 @@
+name = "unicorn8-gallery"
+main = "cloudflare-worker.js"
+compatibility_date = "2026-06-04"
+
+[[kv_namespaces]]
+binding = "GALLERY"
+id = "replace_with_your_kv_namespace_id"
