@@ -1392,7 +1392,7 @@ class UnicornArmMachine {
 // ===== console.mjs =====
 
 const API_BINDINGS = [
-  'WIDTH','HEIGHT','cls','camera','clip','color','pal','palt','pset','pget','line','rect','rectfill','circ','circfill','oval','ovalfill','print','spr','sspr','map','mget','mset','fget','fset','btn','btnp','sfx','beep','rnd','flr','ceil','abs','sgn','min','max','mid','sin','cos','atan2','sqrt','time','stat','reload','cartdata','dset','dget','memcpy','memset','peek','poke','trace'
+  'WIDTH','HEIGHT','cls','camera','clip','color','pal','palt','pset','pget','line','rect','rectfill','circ','circfill','oval','ovalfill','print','spr','sspr','map','mget','mset','fget','fset','btn','btnp','sfx','beep','rnd','flr','ceil','abs','sgn','min','max','mid','sin','cos','atan2','sqrt','time','stat','reload','loadit','cartloaded','cartname','cartaddr','cartbytes','cartdata','dset','dget','memcpy','memset','peek','poke','trace'
 ];
 
 class FantasyConsole {
@@ -1417,8 +1417,11 @@ class FantasyConsole {
     this.frame = 0;
     this.startTime = performance.now();
     this.cartModule = null;
+    this.systemModule = null;
     this.cartName = 'empty';
     this.cartError = null;
+    this.stagedCart = null;
+    this.systemBoot = { autoChainload: true, cartLoadAddress: 0x4000 };
     this.api = this.makeAPI();
   }
 
@@ -1439,16 +1442,43 @@ class FantasyConsole {
     } else {
       this.display.setPalette(PICO_PALETTE);
     }
+    const boot = kernel.bootloader || {};
+    this.systemBoot = {
+      autoChainload: boot.autoChainload !== false,
+      cartLoadAddress: Number.isFinite(boot.cartLoadAddress) ? boot.cartLoadAddress : 0x4000,
+    };
     this.system = { fs, kernel };
+    this.cartModule = null;
+    this.cart = null;
+    this.cartName = 'empty';
     this.display.reset();
     this.input.attach();
+    this.compileSystem();
     const test = this.unicorn.selfTest();
     this.log(`booted ${fs.header.label}: ${kernel.name} ${kernel.version}`);
+    this.log(`system bootloader ready: cart load address $${this.systemBoot.cartLoadAddress.toString(16)}, auto-chainload=${this.systemBoot.autoChainload}`);
     this.log(test.message);
+    if (this.stagedCart && this.systemBoot.autoChainload) this.jumpToStagedCart();
     return kernel;
   }
 
-  loadCart(imageBytes) {
+  compileSystem() {
+    this.systemModule = null;
+    if (!this.system?.fs) return;
+    const mainPath = this.system.kernel.main || '/sys/main.js';
+    if (!this.system.fs.has(mainPath)) return;
+    const source = this.system.fs.readText(mainPath);
+    const destructure = `const {${API_BINDINGS.join(',')}} = api;`;
+    const wrapped = `\n'use strict';\n${destructure}\nlet system = undefined;\n${source}\nreturn (typeof system === 'object' && system) ? system : {\n  _init: (typeof _init === 'function') ? _init : undefined,\n  _update: (typeof _update === 'function') ? _update : undefined,\n  _draw: (typeof _draw === 'function') ? _draw : undefined\n};\n//# sourceURL=${mainPath}`;
+    try {
+      this.systemModule = new Function('api', wrapped)(this.api) || null;
+      if (typeof this.systemModule?._init === 'function') this.safeSystemCall('_init');
+    } catch (error) {
+      throw new Error(`System compile error in ${mainPath}: ${error.message}`);
+    }
+  }
+
+  readCartImage(imageBytes) {
     const fs = imageBytes && imageBytes.list ? imageBytes : parseImage(imageBytes);
     if (!fs.isCart()) throw new Error('Cartridge image must be marked as cart.');
     if (fs.isBootable()) throw new Error('Cartridges in this remake must not contain bootable media.');
@@ -1461,19 +1491,54 @@ class FantasyConsole {
     if (compiledBytecode && readFixedString(compiledBytecode, 0, 8) !== 'U8BCASM1') {
       throw new Error(`Invalid compiled cart bytecode header in ${meta.bytecode}`);
     }
-    this.spriteSheet = fs.has('/cart/sprites.bin') ? new SpriteSheet(fs.readFile('/cart/sprites.bin')) : new SpriteSheet();
-    this.mapData = fs.has('/cart/map.bin') ? new TileMap(fs.readFile('/cart/map.bin')) : new TileMap();
-    this.flags = fs.has('/cart/flags.bin') ? normalizedBytes(fs.readFile('/cart/flags.bin'), 256) : new Uint8Array(256);
-    this.cart = { fs, meta, codePath, code, compiledAssembly, compiledBytecode };
-    this.cartName = meta.title || fs.header.label || 'cart';
-    this.compileCart(code, codePath);
+    return {
+      fs,
+      meta,
+      codePath,
+      code,
+      compiledAssembly,
+      compiledBytecode,
+      diskBytes: fs.diskBytes || fs.bytes,
+      name: meta.title || fs.header.label || 'cart',
+    };
+  }
+
+  loadCart(imageBytes) {
+    const staged = this.readCartImage(imageBytes);
+    this.stageCart(staged);
+    if (this.system && this.systemBoot.autoChainload) this.jumpToStagedCart();
+    else this.log('cart staged; waiting for system bootloader jump');
+  }
+
+  stageCart(cart) {
+    const bytes = cart.diskBytes || cart.fs.diskBytes || cart.fs.bytes;
+    const loadAddress = this.systemBoot.cartLoadAddress;
+    const copyLength = Math.max(0, Math.min(this.ram.length - loadAddress, bytes.length));
+    if (copyLength > 0) this.ram.set(bytes.subarray(0, copyLength), loadAddress);
+    this.stagedCart = {
+      ...cart,
+      memory: { loadAddress, size: bytes.length, copiedToRam: copyLength },
+    };
+    this.log(`loaded ${cart.name} into memory at $${loadAddress.toString(16)} (${copyLength}/${bytes.length} bytes mirrored to RAM)`);
+  }
+
+  jumpToStagedCart() {
+    if (!this.system) throw new Error('No system image booted.');
+    if (!this.stagedCart) throw new Error('No cartridge loaded into memory.');
+    const cart = this.stagedCart;
+    this.log(`system bootloader jumping to ${cart.name}`);
+    this.spriteSheet = cart.fs.has('/cart/sprites.bin') ? new SpriteSheet(cart.fs.readFile('/cart/sprites.bin')) : new SpriteSheet();
+    this.mapData = cart.fs.has('/cart/map.bin') ? new TileMap(cart.fs.readFile('/cart/map.bin')) : new TileMap();
+    this.flags = cart.fs.has('/cart/flags.bin') ? normalizedBytes(cart.fs.readFile('/cart/flags.bin'), 256) : new Uint8Array(256);
+    this.cart = cart;
+    this.cartName = cart.name;
+    this.compileCart(cart.code, cart.codePath);
     this.frame = 0;
     this.startTime = performance.now();
     this.display.reset();
-    this.ram.fill(0);
     this.cartError = null;
     if (typeof this.cartModule._init === 'function') this.safeCall('_init');
-    this.log(`loaded cart ${this.cartName} from ${fs.header.label}${compiledBytecode ? ' with U8BC bytecode' : ''}`);
+    this.log(`running cart ${this.cartName}${cart.compiledBytecode ? ' with U8BC bytecode' : ''}`);
   }
 
   compileCart(source, filename = '/cart/main.js') {
@@ -1499,15 +1564,36 @@ class FantasyConsole {
     cancelAnimationFrame(this.frameHandle);
   }
 
-  reboot() {
-    if (!this.cart) return;
-    this.compileCart(this.cart.code, this.cart.codePath);
-    this.frame = 0;
-    this.startTime = performance.now();
+  clearCart() {
+    this.cart = null;
+    this.cartModule = null;
+    this.cartName = 'empty';
+    this.cartError = null;
+    this.stagedCart = null;
+    this.spriteSheet = new SpriteSheet();
+    this.mapData = new TileMap();
+    this.flags = new Uint8Array(256);
+  }
+
+  returnToSystem() {
+    if (!this.cartModule) return false;
+    this.cart = null;
+    this.cartModule = null;
+    this.cartName = 'empty';
+    this.cartError = null;
+    this.spriteSheet = new SpriteSheet();
+    this.mapData = new TileMap();
+    this.flags = new Uint8Array(256);
     this.display.reset();
-    this.ram.fill(0);
-    if (typeof this.cartModule._init === 'function') this.safeCall('_init');
-    this.log(`rebooted ${this.cartName}`);
+    this.log('returned to system cartridge');
+    return true;
+  }
+
+  reboot() {
+    if (!this.stagedCart && !this.cart) return;
+    if (!this.stagedCart && this.cart) this.stagedCart = this.cart;
+    this.jumpToStagedCart();
+    this.log(`rebooted ${this.cartName} through system bootloader`);
   }
 
   tick(now) {
@@ -1526,12 +1612,14 @@ class FantasyConsole {
   updateFrame() {
     this.input.frameStart();
     if (this.cartModule && typeof this.cartModule._update === 'function') this.safeCall('_update');
+    else if (this.systemModule && typeof this.systemModule._update === 'function') this.safeSystemCall('_update');
     this.input.frameEnd();
     this.frame++;
   }
 
   drawFrame() {
     if (this.cartModule && typeof this.cartModule._draw === 'function') this.safeCall('_draw');
+    else if (this.systemModule && typeof this.systemModule._draw === 'function') this.safeSystemCall('_draw');
     else this.drawBootScreen();
     this.display.render();
   }
@@ -1551,13 +1639,28 @@ class FantasyConsole {
     }
   }
 
+  safeSystemCall(name) {
+    if (!this.systemModule || typeof this.systemModule[name] !== 'function') return;
+    try {
+      return this.systemModule[name]();
+    } catch (error) {
+      this.stop();
+      this.display.cls(0);
+      this.display.print('system crashed', 2, 2, 8);
+      this.display.print(error.message.slice(0, 60), 2, 10, 7);
+      this.display.render();
+      this.log(`${name} system error: ${error.stack || error.message}`);
+    }
+  }
+
   drawBootScreen() {
     const d = this.display;
     d.cls(1);
     d.rect(0, 0, 127, 127, 12);
     d.print('UNICORN-8', 46, 36, 10);
-    d.print('drop a .u8cart.img', 28, 50, 7);
-    d.print('system: ' + (this.system?.kernel?.version || 'none'), 20, 62, 6);
+    d.print('NO CART LOADED :(', 31, 50, 8);
+    d.print('load a cart image', 31, 62, 7);
+    d.print('system: ' + (this.system?.kernel?.version || 'none'), 20, 74, 6);
   }
 
   makeAPI() {
@@ -1610,6 +1713,15 @@ class FantasyConsole {
       time: () => (performance.now() - fc.startTime) / 1000,
       stat: n => fc.stat(n),
       reload: () => fc.reboot(),
+      loadit: () => {
+        if (!fc.stagedCart) return false;
+        fc.jumpToStagedCart();
+        return true;
+      },
+      cartloaded: () => Boolean(fc.stagedCart),
+      cartname: () => fc.stagedCart?.name || '',
+      cartaddr: () => fc.stagedCart?.memory?.loadAddress || 0,
+      cartbytes: () => fc.stagedCart?.memory?.size || 0,
       cartdata: () => true,
       dset: (i, v) => { fc.persist[i & 63] = Number(v) || 0; },
       dget: i => fc.persist[i & 63],
@@ -1842,9 +1954,358 @@ function compilerSourceText() {
 }
 
 function buildSystemImage() {
+  const systemMain = String.raw`
+let lines = [];
+let input = '';
+let blink = 0;
+let bootStep = 0;
+let booting = true;
+let env = {};
+let files = {};
+let fileApps = {};
+let kernel = {};
+
+function add(text) {
+  for (const raw of String(text).split('\n')) {
+    let line = raw;
+    if (!line) {
+      lines.push('');
+      continue;
+    }
+    while (line.length > 31) {
+      let cut = line.lastIndexOf(' ', 31);
+      if (cut < 8) cut = 31;
+      lines.push(line.slice(0, cut));
+      line = line.slice(cut).trimStart();
+    }
+    lines.push(line);
+  }
+  while (lines.length > 13) lines.shift();
+}
+
+function prompt() { return 'C:\\U8>'; }
+function up(s) { return String(s || '').toUpperCase(); }
+function hex(n) { return '$' + (n || 0).toString(16).toUpperCase().padStart(4, '0'); }
+function bytehex(n) { return (n & 255).toString(16).toUpperCase().padStart(2, '0'); }
+
+function make_u8dos_sys(versionMajor = 0, versionMinor = 97) {
+  const bytes = new Uint8Array(64);
+  bytes.set([0x55, 0x38, 0x44, 0x53], 0); // U8DS
+  bytes[4] = versionMajor;
+  bytes[5] = versionMinor;
+  bytes[6] = 16; // FILES
+  bytes[7] = 8;  // BUFFERS
+  bytes[8] = 0x01; // resident kernel flag
+  bytes[9] = 0x40; // cart load high byte: $4000
+  bytes[10] = 0x2A; // API bitmap low
+  bytes[11] = 0x81; // API bitmap high
+  const name = 'COMMAND.COM';
+  for (let i = 0; i < name.length; i++) bytes[16 + i] = name.charCodeAt(i);
+  let crc = 0;
+  for (let i = 0; i < 60; i++) crc = (crc + bytes[i]) & 255;
+  bytes[60] = crc;
+  bytes[61] = 0x0D;
+  bytes[62] = 0x0A;
+  bytes[63] = 0x1A;
+  return bytes;
+}
+
+function binary_text(bytes) {
+  const rows = [];
+  for (let i = 0; i < bytes.length; i += 8) {
+    const chunk = Array.from(bytes.slice(i, i + 8)).map(bytehex).join(' ');
+    rows.push(bytehex(i) + ': ' + chunk);
+  }
+  return rows.join('\n');
+}
+
+function file_size(body) {
+  return body instanceof Uint8Array ? body.length : String(body).length;
+}
+
+function reset_shell() {
+  lines = [];
+  input = '';
+  bootStep = 0;
+  booting = true;
+  add('TYPE LOADIT ONCE YOUVE LOADED A CART');
+  files = {
+    'U8DOS.SYS': make_u8dos_sys(),
+    'COMMAND.COM': new Uint8Array([0x55,0x38,0x43,0x4F,0x4D,0x01,0x00,0x00]),
+    'README.TXT': 'U8DOS is the embedded system cartridge.\nLoad a regular cart image, then type LOADIT.\nPress Escape from a running cart to return here.',
+    'CONFIG.SYS': 'DEVICE=U8ANSI.SYS\nFILES=16\nBUFFERS=8\nSHELL=COMMAND.COM',
+    'AUTOEXEC.BAT': '@ECHO OFF\nVER\nDIR',
+    'NOTES.TXT': 'Use EDIT filename to create or replace a small text file.',
+    'LOADIT.COM': new Uint8Array([0x55,0x38,0x43,0x4F,0x4D,0x02,0x00,0x00]),
+    'HELLO.COM': new Uint8Array([0x55,0x38,0x43,0x4F,0x4D,0x03,0x00,0x00]),
+    'CLOCK.COM': new Uint8Array([0x55,0x38,0x43,0x4F,0x4D,0x04,0x00,0x00]),
+    'ABOUT.COM': new Uint8Array([0x55,0x38,0x43,0x4F,0x4D,0x05,0x00,0x00]),
+    'FILES.COM': new Uint8Array([0x55,0x38,0x43,0x4F,0x4D,0x06,0x00,0x00]),
+  };
+  fileApps = {
+    'COMMAND.COM': 'COMMAND',
+    'LOADIT.COM': 'LOADIT',
+    'HELLO.COM': 'HELLO',
+    'CLOCK.COM': 'CLOCK',
+    'ABOUT.COM': 'ABOUT',
+    'FILES.COM': 'FILES',
+  };
+  load_kernel();
+}
+
+function load_kernel() {
+  const sys = files['U8DOS.SYS'];
+  if (!(sys instanceof Uint8Array) || sys[0] !== 0x55 || sys[1] !== 0x38 || sys[2] !== 0x44 || sys[3] !== 0x53) {
+    kernel = { version: 'CORRUPT', files: 0, buffers: 0, api: '' };
+    env = { version: 'CORRUPT', path: 'C:\\U8;C:\\DOS', comspec: 'COMMAND.COM' };
+    return false;
+  }
+  let crc = 0;
+  for (let i = 0; i < 60; i++) crc = (crc + sys[i]) & 255;
+  const ok = crc === sys[60];
+  const comspec = String.fromCharCode(...sys.slice(16, 27)).replace(/\0+$/g, '') || 'COMMAND.COM';
+  kernel = {
+    version: ok ? sys[4] + '.' + String(sys[5]).padStart(2, '0') : 'CORRUPT',
+    files: sys[6],
+    buffers: sys[7],
+    resident: Boolean(sys[8] & 1),
+    cartLoadAddress: sys[9] << 8,
+    api: ((sys[11] << 8) | sys[10]).toString(16).toUpperCase(),
+    crcOk: ok,
+  };
+  env = {
+    version: kernel.version,
+    path: 'C:\\U8;C:\\DOS',
+    comspec,
+  };
+  return ok;
+}
+
+function dir() {
+  add(' Volume in drive C is U8DOS');
+  add(' Directory of C:\\U8');
+  add('');
+  for (const [name, body] of Object.entries(files)) {
+    const [base, ext = ''] = name.split('.');
+    add(base.slice(0, 8).padEnd(8, ' ') + ' ' + ext.slice(0, 3).padEnd(3, ' ') + String(file_size(body)).padStart(7, ' '));
+  }
+  if (cartloaded()) add('STAGED   CRT' + String(cartbytes()).padStart(7, ' '));
+  add('        ' + (Object.keys(files).length + (cartloaded() ? 1 : 0)) + ' File(s)');
+}
+
+function type_file(name) {
+  const file = up(name || 'README.TXT');
+  if (files[file] instanceof Uint8Array) { add(binary_text(files[file])); return; }
+  if (files[file]) { add(files[file]); return; }
+  add('File not found - ' + file);
+}
+
+function dos_name(name) {
+  const raw = up(name || '').replace(/^C:\\\\?/, '').replace(/^\\+/, '').trim();
+  const safe = raw.replace(/[^A-Z0-9._-]/g, '_');
+  const parts = safe.split('.');
+  const base = (parts[0] || 'UNTITLED').slice(0, 8);
+  const ext = (parts[1] || 'TXT').slice(0, 3);
+  return base + '.' + ext;
+}
+
+function write_file(args) {
+  const firstSpace = args.indexOf(' ');
+  if (firstSpace < 0) { add('Usage: WRITE FILE.TXT text'); return; }
+  const name = dos_name(args.slice(0, firstSpace));
+  files[name] = args.slice(firstSpace + 1);
+  delete fileApps[name];
+  add('Wrote ' + name);
+}
+
+function edit_file(name) {
+  const file = dos_name(name || 'NOTES.TXT');
+  files[file] = 'Edited in U8DOS at ' + new Date().toLocaleTimeString();
+  add('EDIT saved ' + file);
+}
+
+function copy_file(args) {
+  const parts = args.trim().split(/\s+/);
+  if (parts.length < 2) { add('Usage: COPY SRC DST'); return; }
+  const src = dos_name(parts[0]);
+  const dst = dos_name(parts[1]);
+  if (!files[src]) { add('File not found - ' + src); return; }
+  files[dst] = files[src] instanceof Uint8Array ? new Uint8Array(files[src]) : files[src];
+  if (fileApps[src]) fileApps[dst] = fileApps[src];
+  else delete fileApps[dst];
+  add('1 file(s) copied.');
+}
+
+function rename_file(args) {
+  const parts = args.trim().split(/\s+/);
+  if (parts.length < 2) { add('Usage: REN OLD NEW'); return; }
+  const oldName = dos_name(parts[0]);
+  const newName = dos_name(parts[1]);
+  if (!files[oldName]) { add('File not found - ' + oldName); return; }
+  files[newName] = files[oldName];
+  if (fileApps[oldName]) fileApps[newName] = fileApps[oldName];
+  else delete fileApps[newName];
+  delete files[oldName];
+  delete fileApps[oldName];
+  add('Renamed ' + oldName + ' to ' + newName);
+}
+
+function delete_file(name) {
+  const file = dos_name(name);
+  if (!files[file]) { add('File not found - ' + file); return; }
+  delete files[file];
+  delete fileApps[file];
+  add('Deleted ' + file);
+}
+
+function run_loadit() {
+  if (!cartloaded()) {
+    add('No regular cartridge is loaded.');
+    add('Use Load cartridge image, then type LOADIT.');
+    return;
+  }
+  add('Loading ' + cartname());
+  add('Cart image at ' + hex(cartaddr()) + ', ' + cartbytes() + ' bytes');
+  add('Jumping to cartridge entry...');
+  loadit();
+}
+
+function kernel_status() {
+  const ok = load_kernel();
+  add(ok ? 'U8DOS.SYS loaded' : 'U8DOS.SYS CORRUPT');
+  add('Version ' + kernel.version);
+  add('FILES=' + kernel.files + ' BUFFERS=' + kernel.buffers);
+  add('COMSPEC=' + env.comspec);
+  add('CRC=' + (kernel.crcOk ? 'OK' : 'BAD') + ' API=' + kernel.api);
+}
+
+function corrupt_file(name) {
+  const file = dos_name(name || 'U8DOS.SYS');
+  const body = files[file];
+  if (!(body instanceof Uint8Array)) { add('Not a binary - ' + file); return; }
+  if (!body.length) { add('Empty binary - ' + file); return; }
+  const pos = (blink + body.length) % body.length;
+  body[pos] = body[pos] ^ 0xFF;
+  add('Corrupted ' + file + ' at +' + bytehex(pos));
+}
+
+function run_com(name) {
+  const file = dos_name(name.endsWith('.COM') ? name : name + '.COM');
+  if (!files[file]) return false;
+  const app = fileApps[file];
+  if (!app) {
+    add('Cannot execute ' + file);
+    add('Not a U8DOS .COM app.');
+    return true;
+  }
+  add('Loading ' + file + '...');
+  if (app === 'COMMAND') { add('COMMAND.COM already resident.'); return true; }
+  if (app === 'LOADIT') { run_loadit(); return true; }
+  if (app === 'HELLO') { add('Hello from ' + file + '!'); return true; }
+  if (app === 'CLOCK') { add('CLOCK.COM ' + new Date().toLocaleTimeString()); return true; }
+  if (app === 'ABOUT') { add('U8DOS ' + env.version + '\nU8DOS.SYS backs the kernel settings.\n.COM apps run from the in-memory file table.'); return true; }
+  if (app === 'FILES') { add(Object.keys(files).join('\n')); return true; }
+  add('App loader error - ' + file);
+  return true;
+}
+
+function run_command(raw) {
+  const text = raw.trim();
+  if (!text) return;
+  add(prompt() + text);
+  const command = up(text.split(/\s+/)[0]);
+  const arg = text.slice(command.length).trim();
+  if (command === 'CLS') { lines = []; return; }
+  if (command === 'HELP') { add('Commands: DIR CLS VER MEM TYPE WRITE EDIT COPY REN DEL CORRUPT SYS KERNEL LOADSYS PATH SET CART LOADIT BOOT HELP\nApps: COMMAND HELLO CLOCK ABOUT FILES LOADIT'); return; }
+  if (command === 'VER') { load_kernel(); add('U8DOS System Kernel ' + env.version); return; }
+  if (command === 'DIR') { dir(); return; }
+  if (command === 'MEM') { add('32768 bytes Unicorn-8 RAM'); add((cartloaded() ? cartbytes() : 0) + ' bytes staged cart image'); return; }
+  if (command === 'PATH') { add('PATH=' + env.path); return; }
+  if (command === 'SET') { add('COMSPEC=' + env.comspec + '\nPATH=' + env.path); return; }
+  if (command === 'SYS' || command === 'KERNEL') { kernel_status(); return; }
+  if (command === 'LOADSYS') { load_kernel(); add('Reloaded U8DOS.SYS'); return; }
+  if (command === 'TYPE') { type_file(arg); return; }
+  if (command === 'WRITE') { write_file(arg); return; }
+  if (command === 'EDIT') { edit_file(arg); return; }
+  if (command === 'COPY') { copy_file(arg); return; }
+  if (command === 'REN' || command === 'RENAME') { rename_file(arg); return; }
+  if (command === 'DEL' || command === 'ERASE') { delete_file(arg); return; }
+  if (command === 'CORRUPT') { corrupt_file(arg); return; }
+  if (command === 'CART') { add(cartloaded() ? ('Cart: ' + cartname() + '\nAddress: ' + hex(cartaddr()) + '\nBytes: ' + cartbytes()) : 'No cart staged.'); return; }
+  if (command === 'LOADIT' || command === 'LOADIT.COM') { run_loadit(); return; }
+  if (command === 'BOOT') { reset_shell(); return; }
+  if (run_com(command)) return;
+  add('Bad command or file name');
+}
+
+function keyText(event) {
+  if (event.ctrlKey || event.metaKey || event.altKey) return '';
+  if (event.key.length === 1) return event.key;
+  if (event.key === 'Enter') return '\n';
+  if (event.key === 'Backspace') return '\b';
+  if (event.key === 'Escape') return '\x1b';
+  return '';
+}
+
+function handleKey(event) {
+  const key = keyText(event);
+  if (!key) return;
+  event.preventDefault();
+  if (booting) return;
+  if (key === '\n') { run_command(input); input = ''; return; }
+  if (key === '\b') { input = input.slice(0, -1); return; }
+  if (key === '\x1b') { input = ''; return; }
+  if (input.length < 38) input += key;
+}
+
+function _init() {
+  reset_shell();
+  if (globalThis.__u8dosSystemKeyHandler) globalThis.removeEventListener('keydown', globalThis.__u8dosSystemKeyHandler, true);
+  globalThis.__u8dosSystemKeyHandler = handleKey;
+  globalThis.addEventListener('keydown', handleKey, true);
+  trace('U8DOS system cartridge booted. Type HELP.');
+  trace('TYPE LOADIT ONCE YOUVE LOADED A CART');
+}
+
+function _update() {
+  blink++;
+  if (!booting) return;
+  bootStep++;
+  if (bootStep === 1) add('U8BOOT system loader v0.96');
+  if (bootStep === 15) { load_kernel(); add('Loading U8DOS.SYS v' + kernel.version); }
+  if (bootStep === 30) add('Loading COMMAND.COM');
+  if (bootStep === 45) add('Installing cart memory loader');
+  if (bootStep === 60) add('Ready. Load a regular cart, then type LOADIT.');
+  if (bootStep > 78) {
+    booting = false;
+    add('');
+    add('U8DOS System Kernel ' + env.version);
+    add('Type HELP for commands.');
+  }
+}
+
+function _draw() {
+  cls(0);
+  rect(0, 0, 127, 127, 1);
+  rectfill(0, 0, 127, 8, 1);
+  print('U8DOS SYSTEM', 2, 1, 7);
+  print(cartloaded() ? 'CART READY' : 'NO CART', 78, 1, cartloaded() ? 11 : 8);
+  let y = 13;
+  for (const line of lines) {
+    print(line, 2, y, 11);
+    y += 8;
+  }
+  if (!booting) {
+    const promptText = prompt() + input + ((blink % 30) < 15 ? '_' : ' ');
+    const start = Math.max(0, promptText.length - 31);
+    print(promptText.slice(start), 2, 118, 7);
+  }
+}
+`;
   const kernel = {
-    name: 'Unicorn-8 Kernel',
-    version: '1.0.0',
+    name: 'U8DOS System Cartridge',
+    version: '0.96',
+    main: '/sys/main.js',
     screen: { width: 128, height: 128, fps: 30 },
     cpu: { backend: 'unicorn.js optional ARM backend + JavaScript fantasy kernel' },
     imageFormat: {
@@ -1859,18 +2320,40 @@ function buildSystemImage() {
       assembly: 'U8BC-v1',
       bytecodeMagic: 'U8BCASM1',
     },
+    bootloader: {
+      path: '/sys/bootloader.u8asm',
+      autoChainload: false,
+      cartLoadAddress: 0x4000,
+      behavior: 'Stage regular carts in memory. Type LOADIT in U8DOS to jump to the staged cart.',
+    },
   };
+  const bootloader = [
+    '; U8DOS embedded system bootloader',
+    '.target u8-system',
+    '.org $0000',
+    'BOOT:',
+    '  call SYS_INIT',
+    '  call COMMAND_START',
+    'LOADIT:',
+    '  call CART_REQUIRE_STAGED',
+    '  call CART_MAP_MEMORY',
+    '  jmp CART_ENTRY',
+    '.end',
+    '',
+  ].join('\n');
   return createImage({
-    label: 'UNICORN8-SYS',
+    label: 'U8DOS-SYSTEM',
     type: 'system',
     bootable: true,
     bootFile: '/sys/kernel.json',
     files: {
       '/sys/kernel.json': kernel,
+      '/sys/main.js': systemMain,
+      '/sys/bootloader.u8asm': bootloader,
       '/sys/palette.bin': paletteBin(),
       '/sys/compiler/js-to-u8asm.js': compilerSourceText(),
       '/sys/compiler/readme.txt': 'Complete Unicorn-8 cart compiler source. Uses Acorn to parse JavaScript, emits U8BC-v1 assembly, then assembles U8BCASM1 bytecode artifacts.',
-      '/sys/readme.txt': 'Unicorn-8 bootable system image. Carts are standard-layout non-bootable MBR/FAT16 disk images.',
+      '/sys/readme.txt': 'Embedded U8DOS system image. Load a regular cart image, then type LOADIT. Press Escape while a cart runs to return to DOS.',
     },
   });
 }
@@ -2070,10 +2553,8 @@ function _draw(){
 const $ = selector => document.querySelector(selector);
 const logEl = $('#log');
 const fileEl = $('#file');
-const sysFileEl = $('#system-file');
 const canvas = $('#screen');
 const cartInfoEl = $('#cart-info');
-const sysInfoEl = $('#system-info');
 
 const lines = [];
 function log(message) {
@@ -2095,8 +2576,8 @@ try {
 
 function bootDefault() {
   try {
+    fc.clearCart();
     fc.bootSystem(builtSystem);
-    fc.loadCart(builtCart);
     fc.start();
     renderInfo();
   } catch (error) {
@@ -2106,16 +2587,16 @@ function bootDefault() {
 
 function renderInfo() {
   try {
-    const sys = imageInfo(builtSystem);
-    sysInfoEl.textContent = `${sys.label} | bootable=${sys.bootable} | files=${sys.entries.length} | fs=${sys.totalBytes} bytes`;
-  } catch (error) {
-    sysInfoEl.textContent = 'system info unavailable';
-  }
-  try {
     if (fc.cart?.fs) {
       const cart = imageInfo(fc.cart.fs);
       const part = cart.partitioned ? ` | partition=${cart.partition.index} lba=${cart.partition.startLba} sectors=${cart.partition.sectorCount}` : '';
-      cartInfoEl.textContent = `${cart.label} | bootable=${cart.bootable} | filesystem=${cart.filesystem} | partitioned=${cart.partitioned}${part} | files=${cart.entries.length} | fs=${cart.totalBytes} bytes`;
+      const staged = fc.stagedCart?.memory ? ` | memory=$${fc.stagedCart.memory.loadAddress.toString(16)} copied=${fc.stagedCart.memory.copiedToRam}/${fc.stagedCart.memory.size}` : '';
+      cartInfoEl.textContent = `${cart.label} | bootable=${cart.bootable} | filesystem=${cart.filesystem} | partitioned=${cart.partitioned}${part} | files=${cart.entries.length} | fs=${cart.totalBytes} bytes${staged}`;
+    } else if (fc.stagedCart?.fs) {
+      const cart = imageInfo(fc.stagedCart.fs);
+      cartInfoEl.textContent = `${cart.label} | staged in memory at $${fc.stagedCart.memory.loadAddress.toString(16)} | waiting for system bootloader`;
+    } else {
+      cartInfoEl.textContent = 'NO CART LOADED :(';
     }
   } catch (error) {
     cartInfoEl.textContent = 'cart info unavailable';
@@ -2141,22 +2622,6 @@ $('#load-cart').addEventListener('click', async () => {
   }
 });
 
-$('#load-system').addEventListener('click', async () => {
-  try {
-    const bytes = await readFileInput(sysFileEl);
-    if (!bytes) { log('choose a system image first'); return; }
-    const parsed = parseImage(bytes);
-    fc.stop();
-    builtSystem = bytes;
-    fc.bootSystem(parsed);
-    if (fc.cart?.fs) fc.loadCart(fc.cart.fs.diskBytes);
-    fc.start();
-    renderInfo();
-  } catch (error) {
-    log(error.stack || error.message);
-  }
-});
-
 $('#reboot').addEventListener('click', () => {
   try { fc.reboot(); fc.start(); } catch (error) { log(error.stack || error.message); }
 });
@@ -2165,6 +2630,16 @@ $('#pause').addEventListener('click', event => {
   if (fc.running) { fc.stop(); event.currentTarget.textContent = 'Resume'; log('paused'); }
   else { fc.start(); event.currentTarget.textContent = 'Pause'; log('resumed'); }
 });
+
+window.addEventListener('keydown', event => {
+  if (event.key !== 'Escape') return;
+  if (!fc.cartModule) return;
+  event.preventDefault();
+  event.stopPropagation();
+  fc.returnToSystem();
+  fc.start();
+  renderInfo();
+}, true);
 
 $('#export-system').addEventListener('click', () => saveBytesAsDownload(builtSystem, 'unicorn8-system.u8sys.img'));
 $('#export-cart').addEventListener('click', () => saveBytesAsDownload(builtCart, 'star-hopper.u8cart.img'));
