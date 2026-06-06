@@ -1163,14 +1163,28 @@ const KEY_TO_BUTTON = new Map([
 ]);
 
 class InputState {
-  constructor(target = window) {
+  constructor(target = window, canvas = null) {
     this.target = target;
+    this.canvas = canvas;
     this.down = new Uint8Array(8);
     this.prev = new Uint8Array(8);
     this.pressedLatch = new Uint8Array(8);
+    this.keyDown = new Set();
+    this.keyPressedLatch = new Set();
+    this.mouseX = 0;
+    this.mouseY = 0;
+    this.mouseDx = 0;
+    this.mouseDy = 0;
+    this.mouseButtons = 0;
+    this.mousePressedLatch = 0;
+    this.pointerLocked = false;
     this.enabled = false;
     this.onKeyDown = this.onKeyDown.bind(this);
     this.onKeyUp = this.onKeyUp.bind(this);
+    this.onMouseMove = this.onMouseMove.bind(this);
+    this.onMouseDown = this.onMouseDown.bind(this);
+    this.onMouseUp = this.onMouseUp.bind(this);
+    this.onPointerLockChange = this.onPointerLockChange.bind(this);
     this.onBlur = this.onBlur.bind(this);
   }
 
@@ -1179,6 +1193,10 @@ class InputState {
     this.enabled = true;
     this.target.addEventListener('keydown', this.onKeyDown);
     this.target.addEventListener('keyup', this.onKeyUp);
+    this.target.addEventListener('mousemove', this.onMouseMove);
+    this.target.addEventListener('mousedown', this.onMouseDown);
+    this.target.addEventListener('mouseup', this.onMouseUp);
+    document.addEventListener('pointerlockchange', this.onPointerLockChange);
     window.addEventListener('blur', this.onBlur);
   }
 
@@ -1187,28 +1205,72 @@ class InputState {
     this.enabled = false;
     this.target.removeEventListener('keydown', this.onKeyDown);
     this.target.removeEventListener('keyup', this.onKeyUp);
+    this.target.removeEventListener('mousemove', this.onMouseMove);
+    this.target.removeEventListener('mousedown', this.onMouseDown);
+    this.target.removeEventListener('mouseup', this.onMouseUp);
+    document.removeEventListener('pointerlockchange', this.onPointerLockChange);
     window.removeEventListener('blur', this.onBlur);
   }
 
   onKeyDown(event) {
     const btn = KEY_TO_BUTTON.get(event.code);
-    if (btn === undefined) return;
-    if (!this.down[btn]) this.pressedLatch[btn] = 1;
-    this.down[btn] = 1;
-    event.preventDefault();
+    if (!this.keyDown.has(event.code)) this.keyPressedLatch.add(event.code);
+    this.keyDown.add(event.code);
+    if (btn !== undefined) {
+      if (!this.down[btn]) this.pressedLatch[btn] = 1;
+      this.down[btn] = 1;
+      event.preventDefault();
+    }
   }
 
   onKeyUp(event) {
     const btn = KEY_TO_BUTTON.get(event.code);
-    if (btn === undefined) return;
-    this.down[btn] = 0;
-    event.preventDefault();
+    this.keyDown.delete(event.code);
+    if (btn !== undefined) {
+      this.down[btn] = 0;
+      event.preventDefault();
+    }
+  }
+
+  onMouseMove(event) {
+    this.mouseDx += event.movementX || 0;
+    this.mouseDy += event.movementY || 0;
+    const rect = this.canvas?.getBoundingClientRect?.();
+    if (rect) {
+      this.mouseX = Math.max(0, Math.min(WIDTH - 1, (event.clientX - rect.left) * WIDTH / rect.width));
+      this.mouseY = Math.max(0, Math.min(HEIGHT - 1, (event.clientY - rect.top) * HEIGHT / rect.height));
+    } else {
+      this.mouseX = event.clientX || 0;
+      this.mouseY = event.clientY || 0;
+    }
+  }
+
+  onMouseDown(event) {
+    const bit = 1 << (event.button & 7);
+    if (!(this.mouseButtons & bit)) this.mousePressedLatch |= bit;
+    this.mouseButtons |= bit;
+    if (this.canvas && event.target === this.canvas) event.preventDefault();
+  }
+
+  onMouseUp(event) {
+    this.mouseButtons &= ~(1 << (event.button & 7));
+    if (this.canvas && event.target === this.canvas) event.preventDefault();
+  }
+
+  onPointerLockChange() {
+    this.pointerLocked = Boolean(this.canvas && document.pointerLockElement === this.canvas);
   }
 
   onBlur() {
     this.down.fill(0);
     this.prev.fill(0);
     this.pressedLatch.fill(0);
+    this.keyDown.clear();
+    this.keyPressedLatch.clear();
+    this.mouseButtons = 0;
+    this.mousePressedLatch = 0;
+    this.mouseDx = 0;
+    this.mouseDy = 0;
   }
 
   frameStart() {
@@ -1220,6 +1282,10 @@ class InputState {
   frameEnd() {
     this.prev.set(this.down);
     this.pressedLatch.fill(0);
+    this.keyPressedLatch.clear();
+    this.mousePressedLatch = 0;
+    this.mouseDx = 0;
+    this.mouseDy = 0;
   }
 
   btn(index) {
@@ -1228,6 +1294,35 @@ class InputState {
 
   btnp(index) {
     return Boolean(this.pressedLatch[index & 7]);
+  }
+
+  key(code) {
+    return this.keyDown.has(String(code));
+  }
+
+  keyp(code) {
+    return this.keyPressedLatch.has(String(code));
+  }
+
+  mouse() {
+    return {
+      x: this.mouseX,
+      y: this.mouseY,
+      dx: this.mouseDx,
+      dy: this.mouseDy,
+      buttons: this.mouseButtons,
+      locked: this.pointerLocked,
+    };
+  }
+
+  mousep(button = 0) {
+    return Boolean(this.mousePressedLatch & (1 << (button & 7)));
+  }
+
+  lockMouse() {
+    if (!this.canvas?.requestPointerLock) return false;
+    this.canvas.requestPointerLock();
+    return true;
   }
 }
 
@@ -1392,13 +1487,13 @@ class UnicornArmMachine {
 // ===== console.mjs =====
 
 const API_BINDINGS = [
-  'WIDTH','HEIGHT','cls','camera','clip','color','pal','palt','pset','pget','line','rect','rectfill','circ','circfill','oval','ovalfill','print','spr','sspr','map','mget','mset','fget','fset','btn','btnp','sfx','beep','rnd','flr','ceil','abs','sgn','min','max','mid','sin','cos','atan2','sqrt','time','stat','reload','loadit','cartloaded','cartname','cartaddr','cartbytes','cartdata','dset','dget','memcpy','memset','peek','poke','trace'
+  'WIDTH','HEIGHT','cls','camera','clip','color','pal','palt','pset','pget','line','rect','rectfill','circ','circfill','oval','ovalfill','print','spr','sspr','map','mget','mset','fget','fset','btn','btnp','key','keyp','mouse','mousep','lockmouse','sfx','beep','rnd','flr','ceil','abs','sgn','min','max','mid','sin','cos','atan2','sqrt','time','stat','reload','loadit','cartloaded','cartname','cartaddr','cartbytes','cartdata','dset','dget','memcpy','memset','peek','poke','trace'
 ];
 
 class FantasyConsole {
   constructor({ canvas, log = console.log, fps = 30 }) {
     this.display = new Display(canvas);
-    this.input = new InputState(window);
+    this.input = new InputState(window, canvas);
     this.audio = new AudioHost();
     this.unicorn = new UnicornHost(message => this.log(message));
     this.log = log;
@@ -1696,6 +1791,11 @@ class FantasyConsole {
       },
       btn: i => fc.input.btn(i),
       btnp: i => fc.input.btnp(i),
+      key: code => fc.input.key(code),
+      keyp: code => fc.input.keyp(code),
+      mouse: () => fc.input.mouse(),
+      mousep: button => fc.input.mousep(button),
+      lockmouse: () => fc.input.lockMouse(),
       sfx: (id = 0, note = 48, duration = 0.08) => fc.audio.sfx(id, note, duration),
       beep: (freq = 440, duration = 0.08, wave = 'square', volume = 0.8) => fc.audio.beep(freq, duration, wave, volume),
       rnd: x => Math.random() * (x ?? 1),
@@ -2545,7 +2645,6 @@ function _draw(){
     },
   });
 }
-
 
 
 // ===== app.mjs =====
