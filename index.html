@@ -3,17 +3,17 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Unicorn-8</title>
+  <title>Mega 16</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/unicorn.js/1.0-rc3/unicorn.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/acorn@8/dist/acorn.min.js"></script>
-  <script src="./app.js?v=mouse-api-rugancraft-20260605" defer></script>
+  <script src="./app.js?v=mega16-16bit-20260606" defer></script>
 </head>
 <body>
   <main>
-    <h1>UNICORN-8</h1>
+    <h1>MEGA 16</h1>
     <p>PICO-8-style remake using Canvas 2D, image-container system media, and non-bootable cartridge disks staged through the system bootloader.</p>
-    <p>Embedded system: <code>U8DOS</code> · Cart disk: <code>.u8cart.img</code></p>
-    <p><a href="./creator.html">Open Unicorn-8 Creator</a></p>
+    <p>Embedded system: <code>M16DOS</code> · Cart disk: <code>.m16cart.img</code></p>
+    <p><a href="./creator.html">Open Mega 16 Creator</a></p>
     <p><a href="./homepage.html">Open HomePage</a></p>
 
     <section>
@@ -29,7 +29,7 @@
     <section>
       <h2>Load cartridge image</h2>
       <p>Cartridges are non-bootable disk images. Loading one copies it into console memory; the booted system image chainloads it.</p>
-      <input id="file" type="file" accept=".img,.u8cart.img,application/octet-stream">
+      <input id="file" type="file" accept=".img,.m16cart.img,.u8cart.img,application/octet-stream">
       <button id="load-cart">Load</button>
       <pre id="cart-info"></pre>
     </section>
@@ -41,7 +41,7 @@
 
     <section>
       <h2>Controls</h2>
-      <p>In U8DOS: type commands, then <code>LOADIT</code> to run a staged cart · In carts: Escape returns to DOS · Arrow/WASD move · Z/J/Space jump/O · X/K/Enter action/X · carts can read keyboard and mouse with <code>key()</code>, <code>mouse()</code>, and <code>lockmouse()</code></p>
+      <p>In M16DOS: type commands, then <code>LOADIT</code> to run a staged cart · In carts: Escape returns to DOS · Arrow/WASD move · Z/J/Space jump/O · X/K/Enter action/X · carts can read keyboard and mouse with <code>key()</code>, <code>mouse()</code>, and <code>lockmouse()</code></p>
     </section>
 
     <section>

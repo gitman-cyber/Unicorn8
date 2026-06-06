@@ -184,7 +184,7 @@ function createFat16Image(label, fileMap) {
   disk[vbr] = 0xeb;
   disk[vbr + 1] = 0x3c;
   disk[vbr + 2] = 0x90;
-  disk.set(encoder.encode('UNICORN8'), vbr + 3);
+  disk.set(encoder.encode('MEGA16  '), vbr + 3);
   view.setUint16(vbr + 11, bytesPerSector, true);
   disk[vbr + 13] = sectorsPerCluster;
   view.setUint16(vbr + 14, reservedSectors, true);
@@ -841,7 +841,7 @@ function compileStatement(node, out) {
 
 function jsToAssembly(js) {
   const ast = window.acorn.parse(js, { ecmaVersion: 2020, sourceType: 'script' });
-  const out = ['; U8BC-v1 assembly from PG BASIC via Acorn/Astring', '.target u8bc-v1'];
+  const out = ['; M16BC-v1 assembly from PG BASIC via Acorn/Astring', '.target m16bc-v1'];
   compileStatement(ast, out);
   out.push('.end');
   return out.join('\n') + '\n';
@@ -849,9 +849,9 @@ function jsToAssembly(js) {
 
 function assemble(asm) {
   const lines = asm.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
-  const payload = encoder.encode(JSON.stringify({ format: 'U8BC-v1', lines }, null, 2));
+  const payload = encoder.encode(JSON.stringify({ format: 'M16BC-v1', lines }, null, 2));
   const out = new Uint8Array(16 + payload.length);
-  out.set(encoder.encode('U8BCASM1'), 0);
+  out.set(encoder.encode('M16BCASM'), 0);
   new DataView(out.buffer).setUint32(8, payload.length, true);
   new DataView(out.buffer).setUint32(12, crc32(payload), true);
   out.set(payload, 16);
@@ -972,7 +972,7 @@ function exportImage() {
   const c = compiled || compileProject();
   const meta = {
     title: 'Creator Cart',
-    author: 'Unicorn-8 Creator',
+    author: 'Mega 16 Creator',
     main: '/cart/main.js',
     source: '/src/main.bas',
     assembly: '/cart/main.asm',
@@ -980,11 +980,11 @@ function exportImage() {
     sounds: '/cart/sounds.jso',
     scene: '/cart/scene.jso',
     animations: '/cart/anims.jso',
-    format: 'mbr-fat16-u8cart.img',
+    format: 'mbr-fat16-m16cart.img',
   };
   const files = {
     '/meta.jso': meta,
-    '/readme.txt': 'Non-bootable Unicorn-8 FAT16 cart made by creator.html.',
+    '/readme.txt': 'Non-bootable Mega 16 FAT16 cart made by creator.html.',
     '/cart/meta.jso': meta,
     '/cart/main.js': c.js,
     '/cart/main.asm': c.asm,
@@ -998,8 +998,8 @@ function exportImage() {
   for (const [path, text] of Object.entries(c.basic)) {
     files[`/src/${normalizeBasPath(path)}`] = text;
   }
-  saveBytes(createFat16Image('CREATORCART', files), 'creator-cart.u8cart.img');
-  log('exported creator-cart.u8cart.img');
+  saveBytes(createFat16Image('CREATORCART', files), 'creator-cart.m16cart.img');
+  log('exported creator-cart.m16cart.img');
 }
 
 let blocklyWorkspace = null;
@@ -1167,6 +1167,154 @@ const extraStatementBlockGroups = [
     ],
   },
 ];
+
+extraValueBlockGroups.push(
+  {
+    category: 'Screen Values',
+    colour: 190,
+    blocks: [
+      ['pg_expr_screen_width', 'screen width', [], '128'],
+      ['pg_expr_screen_height', 'screen height', [], '128'],
+      ['pg_expr_screen_center_x', 'screen center x', [], '64'],
+      ['pg_expr_screen_center_y', 'screen center y', [], '64'],
+      ['pg_expr_sprite_width', 'sprite width', [], '16'],
+      ['pg_expr_sprite_height', 'sprite height', [], '16'],
+      ['pg_expr_play_left', 'playfield left', [], '0'],
+      ['pg_expr_play_right', 'playfield right', [], '127'],
+      ['pg_expr_play_top', 'playfield top', [], '0'],
+      ['pg_expr_play_bottom', 'playfield bottom', [], '127'],
+      ['pg_expr_safe_left', 'safe left', [], '8'],
+      ['pg_expr_safe_right', 'safe right', [], '119'],
+      ['pg_expr_safe_top', 'safe top', [], '8'],
+      ['pg_expr_safe_bottom', 'safe bottom', [], '119'],
+      ['pg_expr_ground_y', 'default ground y', [], '108'],
+      ['pg_expr_tile_px', 'tile %1 to pixels', [['A', 'tile']], 'A * 16'],
+      ['pg_expr_px_tile', 'pixels %1 to tile', [['A', 'x']], 'Math.floor(A / 16)'],
+      ['pg_expr_grid_center', 'grid %1 center', [['A', 'tile']], 'A * 16 + 8'],
+      ['pg_expr_screen_progress_x', 'x %1 progress', [['A', 'x']], 'A / 127'],
+      ['pg_expr_screen_progress_y', 'y %1 progress', [['A', 'y']], 'A / 127'],
+    ],
+  },
+  {
+    category: 'Game Values 2',
+    colour: 75,
+    blocks: [
+      ['pg_expr_axis_x', 'horizontal axis', [], '(BTN(1) ? 1 : 0) - (BTN(0) ? 1 : 0)'],
+      ['pg_expr_axis_y', 'vertical axis', [], '(BTN(3) ? 1 : 0) - (BTN(2) ? 1 : 0)'],
+      ['pg_expr_dir4_speed_x', 'dir x speed %1', [['A', 1]], '((BTN(1) ? 1 : 0) - (BTN(0) ? 1 : 0)) * A'],
+      ['pg_expr_dir4_speed_y', 'dir y speed %1', [['A', 1]], '((BTN(3) ? 1 : 0) - (BTN(2) ? 1 : 0)) * A'],
+      ['pg_expr_flap_velocity', 'flap velocity if action %1 else %2', [['A', -4], ['B', 'dy']], '(BTN(4) ? A : B)'],
+      ['pg_expr_health_percent', 'hp %1 over max %2 percent', [['A', 'hp'], ['B', 100]], 'Math.max(0, Math.min(1, A / B))'],
+      ['pg_expr_is_dead', 'hp %1 is dead', [['A', 'hp']], '(A <= 0)'],
+      ['pg_expr_score_bonus', 'score %1 with multiplier %2', [['A', 'score'], ['B', 2]], 'A * B'],
+      ['pg_expr_level_seconds', 'level seconds', [], 'Math.floor(t / 30)'],
+      ['pg_expr_countdown_seconds', 'timer %1 seconds left', [['A', 'timer']], 'Math.ceil(A / 30)'],
+      ['pg_expr_spawn_left_x', 'spawn left x', [], '-16'],
+      ['pg_expr_spawn_right_x', 'spawn right x', [], '144'],
+      ['pg_expr_spawn_top_y', 'spawn top y', [], '-16'],
+      ['pg_expr_spawn_bottom_y', 'spawn bottom y', [], '144'],
+      ['pg_expr_random_side_x', 'random side x', [], '(Math.random() < 0.5 ? -16 : 144)'],
+      ['pg_expr_random_side_y', 'random side y', [], '(Math.random() < 0.5 ? -16 : 144)'],
+      ['pg_expr_color_cycle', 'color cycle speed %1', [['A', 6]], 'Math.floor(t / A) % 16'],
+      ['pg_expr_anim_frame', 'anim frame count %1 speed %2', [['A', 4], ['B', 8]], 'Math.floor(t / B) % A'],
+      ['pg_expr_invuln_visible', 'visible with invuln %1', [['A', 'invuln']], '(A <= 0 || Math.floor(t / 4) % 2 === 0)'],
+      ['pg_expr_combo_bonus', 'combo %1 bonus', [['A', 'combo']], 'Math.max(1, A) * 10'],
+    ],
+  },
+  {
+    category: 'Motion Values',
+    colour: 45,
+    blocks: [
+      ['pg_expr_random_range', 'random float %1 to %2', [['A', 0], ['B', 1]], 'A + Math.random() * (B - A)'],
+      ['pg_expr_random_sign', 'random sign', [], '(Math.random() < 0.5 ? -1 : 1)'],
+      ['pg_expr_ease_in', 'ease in %1', [['A', 0.5]], 'A * A'],
+      ['pg_expr_ease_out', 'ease out %1', [['A', 0.5]], '1 - (1 - A) * (1 - A)'],
+      ['pg_expr_smoothstep', 'smoothstep %1', [['A', 0.5]], 'A * A * (3 - 2 * A)'],
+      ['pg_expr_inverse_lerp', 'inverse lerp %1 from %2 to %3', [['A', 'x'], ['B', 0], ['C', 127]], '(A - B) / (C - B)'],
+      ['pg_expr_map_range', 'map %1 %2-%3 to %4-%5', [['A', 'x'], ['B', 0], ['C', 127], ['D', 0], ['E', 1]], 'D + (A - B) * (E - D) / (C - B)'],
+      ['pg_expr_pingpong', 'pingpong %1 length %2', [['A', 't'], ['B', 60]], 'B - Math.abs((A % (B * 2)) - B)'],
+      ['pg_expr_pulse01', 'pulse 0..1 speed %1', [['A', 4]], '(Math.sin(time() * A) + 1) / 2'],
+      ['pg_expr_shake_x', 'shake x amount %1', [['A', 'shake']], '(Math.random() * 2 - 1) * A'],
+    ],
+  }
+);
+
+extraStatementBlockGroups.push(
+  {
+    category: 'Drawing Helpers 2',
+    colour: 160,
+    blocks: [
+      ['pg_draw_panel', 'panel x %1 y %2 w %3 h %4', [['X', 8], ['Y', 8], ['W', 80], ['H', 32]], v => `RECTFILL ${v.X}, ${v.Y}, ${v.X} + ${v.W}, ${v.Y} + ${v.H}, 0\nRECTFILL ${v.X} + 1, ${v.Y} + 1, ${v.X} + ${v.W} - 1, ${v.Y} + ${v.H} - 1, 1\nRECTFILL ${v.X}, ${v.Y}, ${v.X} + ${v.W}, ${v.Y}, 7`],
+      ['pg_draw_button_label', 'button label %1 x %2 y %3', [['TEXT', '"OK"'], ['X', 48], ['Y', 100]], v => `RECTFILL ${v.X}, ${v.Y}, ${v.X} + 28, ${v.Y} + 10, 5\nJS print(${v.TEXT}, ${v.X} + 5, ${v.Y} + 2, 7)`],
+      ['pg_draw_title_bar', 'title bar %1', [['TEXT', '"GAME"']], v => `RECTFILL 0, 0, 127, 9, 0\nJS print(${v.TEXT}, 3, 2, 10)`],
+      ['pg_draw_pause_overlay', 'pause overlay', [], () => `RECTFILL 20, 44, 107, 78, 0\nRECTFILL 22, 46, 105, 76, 1\nJS print("PAUSED", 51, 57, 7)`],
+      ['pg_draw_game_over', 'game over score %1', [['SCORE', 'score']], v => `RECTFILL 15, 38, 112, 86, 0\nRECTFILL 17, 40, 110, 84, 2\nJS print("GAME OVER", 45, 50, 8); print("SCORE " + ${v.SCORE}, 42, 64, 7)`],
+      ['pg_draw_win_overlay', 'win overlay score %1', [['SCORE', 'score']], v => `RECTFILL 15, 38, 112, 86, 0\nRECTFILL 17, 40, 110, 84, 3\nJS print("YOU WIN", 50, 50, 11); print("SCORE " + ${v.SCORE}, 42, 64, 7)`],
+      ['pg_draw_minimap_dot', 'minimap dot x %1 y %2 color %3', [['X', 'x'], ['Y', 'y'], ['COLOR', 10]], v => `PSET 112 + Math.floor(${v.X} / 8), 8 + Math.floor(${v.Y} / 8), ${v.COLOR}`],
+      ['pg_draw_scanlines', 'scanlines color %1', [['COLOR', 0]], v => `JS for (let yy = 0; yy < 128; yy += 2) rectfill(0, yy, 127, yy, ${v.COLOR})`],
+      ['pg_draw_rain', 'rain count %1 color %2', [['COUNT', 24], ['COLOR', 12]], v => `JS for (let i = 0; i < ${v.COUNT}; i++) { const rx = (i * 17 + t * 2) & 127; const ry = (i * 29 + t * 5) & 127; rectfill(rx, ry, rx, ry + 3, ${v.COLOR}); }`],
+      ['pg_draw_snow', 'snow count %1 color %2', [['COUNT', 24], ['COLOR', 7]], v => `JS for (let i = 0; i < ${v.COUNT}; i++) pset((i * 23 + Math.floor(t / 2)) & 127, (i * 31 + t) & 127, ${v.COLOR})`],
+      ['pg_draw_speed_lines', 'speed lines color %1', [['COLOR', 6]], v => `JS for (let i = 0; i < 10; i++) rectfill((i * 19 - t * 3) & 127, i * 12 + 4, ((i * 19 - t * 3) & 127) + 10, i * 12 + 4, ${v.COLOR})`],
+      ['pg_draw_boss_bar', 'boss hp %1 max %2', [['HP', 'bossHp'], ['MAX', 100]], v => `RECTFILL 20, 116, 108, 122, 0\nRECTFILL 22, 118, 22 + (84 * ${v.HP} / ${v.MAX}), 120, 8`],
+      ['pg_draw_dialog_box', 'dialog %1', [['TEXT', '"HELLO!"']], v => `RECTFILL 4, 92, 123, 124, 0\nRECTFILL 6, 94, 121, 122, 1\nJS print(${v.TEXT}, 10, 101, 7)`],
+      ['pg_draw_reticle_box', 'target box x %1 y %2', [['X', 'x'], ['Y', 'y']], v => `RECTFILL ${v.X} - 8, ${v.Y} - 8, ${v.X} + 8, ${v.Y} - 7, 8\nRECTFILL ${v.X} - 8, ${v.Y} + 8, ${v.X} + 8, ${v.Y} + 9, 8\nRECTFILL ${v.X} - 8, ${v.Y} - 8, ${v.X} - 7, ${v.Y} + 8, 8\nRECTFILL ${v.X} + 8, ${v.Y} - 8, ${v.X} + 9, ${v.Y} + 8, 8`],
+      ['pg_draw_toast', 'toast %1 timer %2', [['TEXT', '"READY"'], ['TIMER', 'toast']], v => `IF ${v.TIMER} > 0 THEN\n  RECTFILL 30, 10, 98, 22, 0\n  JS print(${v.TEXT}, 34, 13, 7)\nEND IF`],
+    ],
+  },
+  {
+    category: 'Game Helpers 2',
+    colour: 75,
+    blocks: [
+      ['pg_game_flappy_physics', 'flappy y %1 dy %2 gravity %3 flap %4', [['Y', 'y'], ['DY', 'dy'], ['G', 0.28], ['FLAP', -4]], v => `IF BTN(4) THEN\n  ${v.DY} = ${v.FLAP}\nEND IF\n${v.DY} = ${v.DY} + ${v.G}\n${v.Y} = ${v.Y} + ${v.DY}`],
+      ['pg_game_pipe_scroll', 'pipe x %1 speed %2 reset at %3', [['X', 'pipeX'], ['SPEED', 1.5], ['RESET', 144]], v => `${v.X} = ${v.X} - ${v.SPEED}\nIF ${v.X} < -20 THEN\n  ${v.X} = ${v.RESET}\nEND IF`],
+      ['pg_game_asteroid_wrap', 'asteroid x %1 y %2', [['X', 'x'], ['Y', 'y']], v => `${v.X} = (((${v.X}) % 144) + 144) % 144 - 8\n${v.Y} = (((${v.Y}) % 144) + 144) % 144 - 8`],
+      ['pg_game_topdown_accel', 'topdown accel dx %1 dy %2 amount %3', [['DX', 'dx'], ['DY', 'dy'], ['A', 0.2]], v => `IF BTN(0) THEN\n  ${v.DX} = ${v.DX} - ${v.A}\nEND IF\nIF BTN(1) THEN\n  ${v.DX} = ${v.DX} + ${v.A}\nEND IF\nIF BTN(2) THEN\n  ${v.DY} = ${v.DY} - ${v.A}\nEND IF\nIF BTN(3) THEN\n  ${v.DY} = ${v.DY} + ${v.A}\nEND IF`],
+      ['pg_game_cap_speed', 'cap velocity %1 %2 max %3', [['DX', 'dx'], ['DY', 'dy'], ['MAX', 3]], v => `JS { const m = Math.hypot(${v.DX}, ${v.DY}); if (m > ${v.MAX}) { ${v.DX} = ${v.DX} / m * ${v.MAX}; ${v.DY} = ${v.DY} / m * ${v.MAX}; } }`],
+      ['pg_game_enemy_wander', 'wander x %1 y %2 speed %3', [['X', 'x'], ['Y', 'y'], ['SPEED', 1]], v => `IF t % 30 = 0 THEN\n  dx = (Math.random() * 2 - 1) * ${v.SPEED}\n  dy = (Math.random() * 2 - 1) * ${v.SPEED}\nEND IF\n${v.X} = ${v.X} + dx\n${v.Y} = ${v.Y} + dy`],
+      ['pg_game_knockback', 'knockback dx %1 dy %2 from hit %3', [['DX', 'dx'], ['DY', 'dy'], ['HIT', 'hit']], v => `IF ${v.HIT} THEN\n  ${v.DX} = -${v.DX} * 2\n  ${v.DY} = -2\nEND IF`],
+      ['pg_game_damage_if_touch', 'damage hp %1 if touching %2', [['HP', 'hp'], ['HIT', 'hit']], v => `IF ${v.HIT} THEN\n  ${v.HP} = ${v.HP} - 1\nEND IF`],
+      ['pg_game_respawn_coin', 'respawn coin %1 %2', [['X', 'coinX'], ['Y', 'coinY']], v => `${v.X} = 8 + Math.random() * 112\n${v.Y} = 8 + Math.random() * 96`],
+      ['pg_game_screen_bounce_xy', 'bounce xy %1 %2 dx %3 dy %4', [['X', 'x'], ['Y', 'y'], ['DX', 'dx'], ['DY', 'dy']], v => `${v.X} = ${v.X} + ${v.DX}\n${v.Y} = ${v.Y} + ${v.DY}\nIF ${v.X} < 0 OR ${v.X} > 112 THEN\n  ${v.DX} = -${v.DX}\nEND IF\nIF ${v.Y} < 0 OR ${v.Y} > 112 THEN\n  ${v.DY} = -${v.DY}\nEND IF`],
+      ['pg_game_checkpoint', 'checkpoint save %1 %2 from %3 %4', [['SX', 'spawnX'], ['SY', 'spawnY'], ['X', 'x'], ['Y', 'y']], v => `${v.SX} = ${v.X}\n${v.SY} = ${v.Y}`],
+      ['pg_game_apply_checkpoint', 'checkpoint load %1 %2 to %3 %4', [['SX', 'spawnX'], ['SY', 'spawnY'], ['X', 'x'], ['Y', 'y']], v => `${v.X} = ${v.SX}\n${v.Y} = ${v.SY}`],
+      ['pg_game_combo_timeout', 'combo %1 timer %2', [['COMBO', 'combo'], ['TIMER', 'comboTimer']], v => `IF ${v.TIMER} > 0 THEN\n  ${v.TIMER} = ${v.TIMER} - 1\nEND IF\nIF ${v.TIMER} = 0 THEN\n  ${v.COMBO} = 0\nEND IF`],
+      ['pg_game_camera_shake_hit', 'shake %1 when hit %2 amount %3', [['SHAKE', 'shake'], ['HIT', 'hit'], ['AMOUNT', 8]], v => `IF ${v.HIT} THEN\n  ${v.SHAKE} = ${v.AMOUNT}\nEND IF\n${v.SHAKE} = Math.max(0, ${v.SHAKE} - 1)`],
+      ['pg_game_round_timer_end', 'end flag %1 timer %2', [['FLAG', 'done'], ['TIMER', 'timer']], v => `IF ${v.TIMER} <= 0 THEN\n  ${v.FLAG} = 1\nEND IF`],
+    ],
+  },
+  {
+    category: 'Sound Helpers 2',
+    colour: 300,
+    blocks: [
+      ['pg_sound_menu_move', 'menu move sfx', [], () => 'BEEP 520, 0.03'],
+      ['pg_sound_menu_select', 'menu select sfx', [], () => 'BEEP 740, 0.05'],
+      ['pg_sound_error', 'error sfx', [], () => 'BEEP 90, 0.18'],
+      ['pg_sound_enemy_pop', 'enemy pop sfx', [], () => 'BEEP 330, 0.04\nBEEP 220, 0.04'],
+      ['pg_sound_checkpoint', 'checkpoint sfx', [], () => 'BEEP 523, 0.04\nBEEP 659, 0.04\nBEEP 784, 0.06'],
+      ['pg_sound_countdown_beep', 'countdown beep timer %1', [['TIMER', 'timer']], v => `IF ${v.TIMER} <= 90 AND ${v.TIMER} % 30 = 0 THEN\n  BEEP 660, 0.04\nEND IF`],
+      ['pg_sound_low_health', 'low health beep hp %1', [['HP', 'hp']], v => `IF ${v.HP} <= 2 AND t % 45 = 0 THEN\n  BEEP 180, 0.05\nEND IF`],
+      ['pg_sound_engine_loop', 'engine tick speed %1', [['SPEED', 'speed']], v => `IF t % 8 = 0 THEN\n  BEEP 80 + ${v.SPEED} * 20, 0.02\nEND IF`],
+      ['pg_sound_random_blip', 'random blip chance %1', [['CHANCE', 80]], v => `IF Math.random() < 1 / ${v.CHANCE} THEN\n  BEEP 300 + Math.random() * 500, 0.03\nEND IF`],
+      ['pg_sound_victory_fanfare', 'victory fanfare', [], () => 'BEEP 523, 0.06\nBEEP 659, 0.06\nBEEP 784, 0.06\nBEEP 1046, 0.12'],
+    ],
+  },
+  {
+    category: 'Flow Shortcuts 2',
+    colour: 120,
+    blocks: [
+      ['pg_flow_when_start_pressed', 'when action pressed %1', [], v => `IF BTN(4) THEN\n${statementLines(v.block, 'BODY').join('\n')}\nEND IF`, 'BODY'],
+      ['pg_flow_if_alive', 'if hp %1 alive %2', [['HP', 'hp']], v => `IF ${v.HP} > 0 THEN\n${statementLines(v.block, 'BODY').join('\n')}\nEND IF`, 'BODY'],
+      ['pg_flow_if_dead', 'if hp %1 dead %2', [['HP', 'hp']], v => `IF ${v.HP} <= 0 THEN\n${statementLines(v.block, 'BODY').join('\n')}\nEND IF`, 'BODY'],
+      ['pg_flow_once_flag', 'once flag %1 %2', [['FLAG', 'didThing']], v => `IF NOT ${v.FLAG} THEN\n${statementLines(v.block, 'BODY').join('\n')}\n  ${v.FLAG} = 1\nEND IF`, 'BODY'],
+      ['pg_flow_when_timer_done', 'when timer %1 done %2', [['TIMER', 'timer']], v => `IF ${v.TIMER} <= 0 THEN\n${statementLines(v.block, 'BODY').join('\n')}\nEND IF`, 'BODY'],
+      ['pg_flow_when_chance', 'chance 1 in %1 %2', [['CHANCE', 60]], v => `IF Math.random() < 1 / ${v.CHANCE} THEN\n${statementLines(v.block, 'BODY').join('\n')}\nEND IF`, 'BODY'],
+      ['pg_flow_if_on_screen', 'if sprite x %1 y %2 on screen %3', [['X', 'x'], ['Y', 'y']], v => `IF ${v.X} > -16 AND ${v.X} < 128 AND ${v.Y} > -16 AND ${v.Y} < 128 THEN\n${statementLines(v.block, 'BODY').join('\n')}\nEND IF`, 'BODY'],
+      ['pg_flow_if_off_screen', 'if sprite x %1 y %2 off screen %3', [['X', 'x'], ['Y', 'y']], v => `IF ${v.X} <= -16 OR ${v.X} >= 128 OR ${v.Y} <= -16 OR ${v.Y} >= 128 THEN\n${statementLines(v.block, 'BODY').join('\n')}\nEND IF`, 'BODY'],
+      ['pg_flow_for_tiles_x', 'for tile x %1 count %2 %3', [['I', 'tileX'], ['COUNT', 8]], v => `FOR ${v.I} = 0 TO ${v.COUNT} - 1\n${statementLines(v.block, 'BODY').join('\n')}\nNEXT`, 'BODY'],
+      ['pg_flow_state_equals', 'if state %1 equals %2 %3', [['STATE', 'state'], ['VALUE', 1]], v => `IF ${v.STATE} = ${v.VALUE} THEN\n${statementLines(v.block, 'BODY').join('\n')}\nEND IF`, 'BODY'],
+    ],
+  }
+);
 
 function fieldValue(block, name, fallback = '') {
   return block.getFieldValue(name) || fallback;

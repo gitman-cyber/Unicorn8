@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Unicorn-8 Cart Gallery</title>
+  <title>Mega 16 Cart Gallery</title>
   <style>
     :root {
       color-scheme: dark;
@@ -268,8 +268,8 @@
 <body>
   <header>
     <div class="stack">
-      <h1>Unicorn-8 Cart Gallery</h1>
-      <p>Publish `.img` and `.u8cart.img` experiments with captions, then talk about them.</p>
+      <h1>Mega 16 Cart Gallery</h1>
+      <p>Publish `.img` and `.m16cart.img` experiments with captions, then talk about them.</p>
     </div>
     <div class="row">
       <a href="index.html"><button>Open Game Runner</button></a>
@@ -284,7 +284,7 @@
         <div class="form-grid">
           <p class="hint">Optional setup panel. You can hide this from the page by filling the embedded Worker config in the script.</p>
           <label>Worker URL
-            <input id="api-endpoint" placeholder="https://unicorn8-gallery.YOUR_SUBDOMAIN.workers.dev">
+            <input id="api-endpoint" placeholder="https://mega16-gallery.YOUR_SUBDOMAIN.workers.dev">
           </label>
           <label>API key, if your Worker uses one
             <input id="api-key" type="password" autocomplete="off" placeholder="Optional Worker API key">
@@ -307,7 +307,7 @@
         <h2>Publish Cart</h2>
         <div class="form-grid">
           <label>Cart image
-            <input id="cart-file" type="file" accept=".img,.u8cart.img,application/octet-stream">
+            <input id="cart-file" type="file" accept=".img,.m16cart.img,.u8cart.img,application/octet-stream">
           </label>
           <label>Title
             <input id="cart-title" maxlength="80" placeholder="Flappy Example">
@@ -357,7 +357,7 @@
     // Put your deployed Cloudflare Worker URL here if you want it hidden from the visible page.
     // If you set an API_KEY secret on the Worker, put the same value in apiKey.
     const EMBEDDED_WORKER_CONFIG = {
-      endpoint: 'https://unicorn8-gallery.barbaraboulopez.workers.dev',
+      endpoint: 'https://mega16-gallery.barbaraboulopez.workers.dev',
       apiKey: '',
       dataSource: '',
       database: '',
@@ -365,7 +365,7 @@
 
     const COLLECTION_CARTS = 'images';
     const COLLECTION_COMMENTS = 'comments';
-    const STORE_KEY = 'u8.homepage.worker';
+    const STORE_KEY = 'm16.homepage.worker';
     const $ = selector => document.querySelector(selector);
 
     let settings = loadSettings();
@@ -457,7 +457,7 @@
     function downloadDataUrl(dataUrl, filename) {
       const a = document.createElement('a');
       a.href = dataUrl;
-      a.download = filename || 'cart.u8cart.img';
+      a.download = filename || 'cart.m16cart.img';
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -467,7 +467,7 @@
       const status = $('#publish-status');
       const file = $('#cart-file').files[0];
       if (!file) {
-        setStatus(status, 'Choose a .img or .u8cart.img first.', 'bad');
+        setStatus(status, 'Choose a .img or .m16cart.img first.', 'bad');
         return;
       }
       if (file.size > 12 * 1024 * 1024) {

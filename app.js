@@ -2,7 +2,8 @@
 'use strict';
 
 // ===== imagefs.mjs =====
-const MAGIC = 'U8IMG01\0';
+const MAGIC = 'M16IMG1\0';
+const LEGACY_MAGIC = 'U8IMG01\0';
 const VERSION = 1;
 const DEFAULT_SECTOR_SIZE = 512;
 const HEADER_SIZE = 512;
@@ -14,7 +15,7 @@ const FLAG_SYSTEM = 1 << 2;
 const MBR_SIZE = 512;
 const MBR_PARTITION_OFFSET = 446;
 const MBR_SIGNATURE_OFFSET = 510;
-const U8_PARTITION_TYPE = 0x7f;
+const M16_PARTITION_TYPE = 0x7f;
 const FAT16_PARTITION_TYPE = 0x06;
 const DEFAULT_PARTITION_START_LBA = 2048;
 const FAT_ATTR_DIRECTORY = 0x10;
@@ -84,6 +85,10 @@ function readFixedString(source, offset, length) {
 
 function readMagic(bytes) {
   return decoder.decode(bytes.subarray(0, 8));
+}
+
+function isSupportedMagic(magic) {
+  return magic === MAGIC || magic === LEGACY_MAGIC;
 }
 
 class ImageFileSystem {
@@ -185,7 +190,7 @@ function wrapImageInMbrPartition(payload, options = {}) {
 
   disk.set(payload, partitionOffset);
   writeMbrPartitionEntry(disk, MBR_PARTITION_OFFSET, {
-    type: options.partitionType || U8_PARTITION_TYPE,
+    type: options.partitionType || M16_PARTITION_TYPE,
     startLba,
     sectorCount,
   });
@@ -251,7 +256,7 @@ function createFat16CartDisk(options = {}) {
   const rootEntryCount = 512;
   const rootDirSectors = Math.ceil(rootEntryCount * 32 / bytesPerSector);
   const startLba = options.partitionStartLba || DEFAULT_PARTITION_START_LBA;
-  const volumeLabel = String(options.label || 'U8 CART').toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').slice(0, 11).padEnd(11, ' ');
+  const volumeLabel = String(options.label || 'M16 CART').toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').slice(0, 11).padEnd(11, ' ');
 
   const rawFiles = options.files || {};
   const files = Object.entries(rawFiles).map(([path, value]) => ({ path: normalizePath(path), bytes: asBytes(value) }));
@@ -302,7 +307,7 @@ function createFat16CartDisk(options = {}) {
   disk[vbr + 0] = 0xeb;
   disk[vbr + 1] = 0x3c;
   disk[vbr + 2] = 0x90;
-  disk.set(encoder.encode('UNICORN8'), vbr + 3);
+  disk.set(encoder.encode('MEGA16  '), vbr + 3);
   view.setUint16(vbr + 11, bytesPerSector, true);
   disk[vbr + 13] = sectorsPerCluster;
   view.setUint16(vbr + 14, reservedSectors, true);
@@ -317,7 +322,7 @@ function createFat16CartDisk(options = {}) {
   view.setUint32(vbr + 32, totalSectors >= 0x10000 ? totalSectors : 0, true);
   disk[vbr + 36] = 0x80;
   disk[vbr + 38] = 0x29;
-  view.setUint32(vbr + 39, crc32(encoder.encode(options.label || 'U8 CART')), true);
+  view.setUint32(vbr + 39, crc32(encoder.encode(options.label || 'M16 CART')), true);
   disk.set(encoder.encode(volumeLabel), vbr + 43);
   disk.set(encoder.encode('FAT16   '), vbr + 54);
   disk.set(encoder.encode('This is a data cartridge, not bootable.\r\n'), vbr + 90);
@@ -400,7 +405,7 @@ function createFat16CartDisk(options = {}) {
 }
 
 function findImagePayload(bytes) {
-  if (readMagic(bytes) === MAGIC) {
+  if (isSupportedMagic(readMagic(bytes))) {
     return { bytes, partition: null };
   }
 
@@ -420,7 +425,7 @@ function findImagePayload(bytes) {
         throw new Error('Partition table points outside the image.');
       }
       const payload = bytes.slice(byteOffset, byteOffset + byteLength);
-      if (readMagic(payload) === MAGIC) {
+      if (isSupportedMagic(readMagic(payload))) {
         return {
           bytes: payload,
           partition: { index: i + 1, type, bootable: false, startLba, sectorCount, byteOffset, byteLength },
@@ -656,11 +661,11 @@ function parseImage(input) {
   const bytes = found.bytes;
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const magic = readMagic(bytes);
-  if (magic !== MAGIC) {
+  if (!isSupportedMagic(magic)) {
     const fatCart = parseFat16CartDisk(sourceBytes);
     if (fatCart) return fatCart;
     const fatReason = parseFat16CartDisk.lastReason ? ` FAT16 reason: ${parseFat16CartDisk.lastReason}.` : '';
-    throw new Error(`Bad image magic: ${JSON.stringify(magic)}. Not a U8IMG container and no readable non-bootable FAT16 cart partition was found.${fatReason}`);
+    throw new Error(`Bad image magic: ${JSON.stringify(magic)}. Not a M16IMG container and no readable non-bootable FAT16 cart partition was found.${fatReason}`);
   }
   const version = view.getUint16(8, true);
   if (version !== VERSION) throw new Error(`Unsupported image version ${version}.`);
@@ -721,7 +726,7 @@ function imageInfo(input) {
     bootFile: fs.header.bootFile,
     partitioned: fs.isPartitioned(),
     partition: fs.header.partition,
-    filesystem: fs.header.filesystem || 'U8IMG',
+    filesystem: fs.header.filesystem || 'M16IMG',
     sectorSize: fs.header.sectorSize,
     totalBytes: fs.header.totalBytes,
     diskBytes: fs.diskBytes.length,
@@ -764,7 +769,7 @@ const ImageFormat = Object.freeze({
   PATH_BYTES,
   DEFAULT_SECTOR_SIZE,
   MBR_SIZE,
-  U8_PARTITION_TYPE,
+  M16_PARTITION_TYPE,
   FAT16_PARTITION_TYPE,
   DEFAULT_PARTITION_START_LBA,
 });
@@ -775,6 +780,9 @@ const ImageFormat = Object.freeze({
 const WIDTH = 128;
 const HEIGHT = 128;
 const CANVAS_SCALE = 4;
+const SYSTEM_NAME = 'Mega 16';
+const SYSTEM_SHORT = 'M16';
+const COLOR_DEPTH_BITS = 16;
 
 const PICO_PALETTE = [
   0x000000ff, 0x1d2b53ff, 0x7e2553ff, 0x008751ff,
@@ -817,7 +825,7 @@ class Display {
     this.palette = PICO_PALETTE.slice();
     this.palMap = Array.from({ length: 16 }, (_, i) => i);
     this.transparent = new Set([0]);
-    this.pixels = new Uint8Array(WIDTH * HEIGHT);
+    this.pixels = new Uint16Array(WIDTH * HEIGHT);
     this.image = this.ctx.createImageData(WIDTH, HEIGHT);
     this.clipX = 0;
     this.clipY = 0;
@@ -848,7 +856,7 @@ class Display {
   }
 
   cls(color = 0) {
-    this.pixels.fill(color & 15);
+    this.pixels.fill(this.mapColor(color));
     this.cursorX = 0;
     this.cursorY = 0;
   }
@@ -886,14 +894,14 @@ class Display {
     x = Math.trunc(x - this.cameraX);
     y = Math.trunc(y - this.cameraY);
     if (!this.inClip(x, y)) return;
-    this.pixels[y * WIDTH + x] = this.palMap[color & 15] & 15;
+    this.pixels[y * WIDTH + x] = this.mapColor(color);
   }
 
   rawPset(x, y, color = this.color) {
     x = Math.trunc(x);
     y = Math.trunc(y);
     if (!this.inClip(x, y)) return;
-    this.pixels[y * WIDTH + x] = this.palMap[color & 15] & 15;
+    this.pixels[y * WIDTH + x] = this.mapColor(color);
   }
 
   pget(x, y) {
@@ -1010,7 +1018,7 @@ class Display {
         const sx = sx0 + (flipX ? width - 1 - xx : xx);
         const sy = sy0 + (flipY ? height - 1 - yy : yy);
         const c = spriteSheet.get(sx, sy);
-        if (!this.transparent.has(c & 15)) this.pset(x + xx, y + yy, c);
+        if (!(c <= 15 && this.transparent.has(c))) this.pset(x + xx, y + yy, c);
       }
     }
   }
@@ -1024,7 +1032,7 @@ class Display {
         const px = sx + (flipX ? sw - 1 - u : u);
         const py = sy + (flipY ? sh - 1 - v : v);
         const c = spriteSheet.get(px, py);
-        if (!this.transparent.has(c & 15)) this.pset(dx + xx, dy + yy, c);
+        if (!(c <= 15 && this.transparent.has(c))) this.pset(dx + xx, dy + yy, c);
       }
     }
   }
@@ -1043,7 +1051,8 @@ class Display {
   render() {
     const data = this.image.data;
     for (let i = 0, j = 0; i < this.pixels.length; i++, j += 4) {
-      const rgba = this.palette[this.pixels[i] & 15] >>> 0;
+      const pixel = this.pixels[i] & 0xffff;
+      const rgba = Display.rgb565ToRgba(pixel);
       data[j] = (rgba >>> 24) & 0xFF;
       data[j + 1] = (rgba >>> 16) & 0xFF;
       data[j + 2] = (rgba >>> 8) & 0xFF;
@@ -1058,20 +1067,53 @@ class Display {
   inClip(x, y) {
     return x >= this.clipX && y >= this.clipY && x < this.clipX + this.clipW && y < this.clipY + this.clipH;
   }
+
+  mapColor(color) {
+    color = Number(color) || 0;
+    if (color > 0xffff) return color & 0xffff;
+    if (color >= 0 && color <= 15) return Display.rgbaToRgb565(this.palette[this.palMap[color & 15] & 15]);
+    return color & 0xffff;
+  }
+
+  static rgb565(r = 0, g = 0, b = 0) {
+    r = Math.max(0, Math.min(255, Math.trunc(r)));
+    g = Math.max(0, Math.min(255, Math.trunc(g)));
+    b = Math.max(0, Math.min(255, Math.trunc(b)));
+    return ((r & 0xf8) << 8) | ((g & 0xf8) << 3) | (b >>> 3);
+  }
+
+  static rgbaToRgb565(rgba) {
+    return Display.rgb565((rgba >>> 24) & 0xff, (rgba >>> 16) & 0xff, (rgba >>> 8) & 0xff);
+  }
+
+  static rgb565ToRgba(value) {
+    const r5 = (value >>> 11) & 0x1f;
+    const g6 = (value >>> 5) & 0x3f;
+    const b5 = value & 0x1f;
+    const r = (r5 << 3) | (r5 >>> 2);
+    const g = (g6 << 2) | (g6 >>> 4);
+    const b = (b5 << 3) | (b5 >>> 2);
+    return ((r & 0xff) << 24) | ((g & 0xff) << 16) | ((b & 0xff) << 8) | 0xff;
+  }
 }
 
 class SpriteSheet {
   constructor(bytes = null) {
     this.width = 128;
     this.height = 128;
-    this.pixels = new Uint8Array(this.width * this.height);
+    this.pixels = new Uint16Array(this.width * this.height);
     if (bytes) this.load(bytes);
   }
 
   load(bytes) {
     const src = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    if (src.length === this.pixels.length * 2) {
+      const view = new DataView(src.buffer, src.byteOffset, src.byteLength);
+      for (let i = 0; i < this.pixels.length; i++) this.pixels[i] = view.getUint16(i * 2, true);
+      return;
+    }
     if (src.length === this.pixels.length) {
-      this.pixels.set(src.map(v => v & 15));
+      for (let i = 0; i < src.length; i++) this.pixels[i] = src[i] & 15;
       return;
     }
     if (src.length === this.pixels.length / 2) {
@@ -1081,7 +1123,7 @@ class SpriteSheet {
       }
       return;
     }
-    throw new Error(`Sprite sheet size must be ${this.pixels.length} raw bytes or ${this.pixels.length / 2} packed bytes.`);
+    throw new Error(`Sprite sheet size must be ${this.pixels.length * 2} RGB565 bytes, ${this.pixels.length} indexed bytes, or ${this.pixels.length / 2} packed bytes.`);
   }
 
   dumpPacked() {
@@ -1090,16 +1132,23 @@ class SpriteSheet {
     return out;
   }
 
+  dump16() {
+    const out = new Uint8Array(this.pixels.length * 2);
+    const view = new DataView(out.buffer);
+    for (let i = 0; i < this.pixels.length; i++) view.setUint16(i * 2, this.pixels[i] & 0xffff, true);
+    return out;
+  }
+
   get(x, y) {
     x = Math.trunc(x); y = Math.trunc(y);
     if (x < 0 || y < 0 || x >= this.width || y >= this.height) return 0;
-    return this.pixels[y * this.width + x] & 15;
+    return this.pixels[y * this.width + x] & 0xffff;
   }
 
   set(x, y, color) {
     x = Math.trunc(x); y = Math.trunc(y);
     if (x < 0 || y < 0 || x >= this.width || y >= this.height) return;
-    this.pixels[y * this.width + x] = color & 15;
+    this.pixels[y * this.width + x] = color & 0xffff;
   }
 
   drawSprite(index, pattern) {
@@ -1379,8 +1428,8 @@ class AudioHost {
 
 
 
-// ===== unicornHost.mjs =====
-class UnicornHost {
+// ===== mega16ArmHost.mjs =====
+class Mega16ArmHost {
   constructor(logger = console.log) {
     this.logger = logger;
     this.uc = null;
@@ -1397,7 +1446,7 @@ class UnicornHost {
 
   selfTest() {
     if (!this.detect()) {
-      this.selfTestResult = { ok: false, mode: 'fallback', message: 'Unicorn.js was not loaded; using JavaScript VM backend.' };
+      this.selfTestResult = { ok: false, mode: 'fallback', message: 'Mega 16 ARM backend was not loaded; using JavaScript VM backend.' };
       return this.selfTestResult;
     }
     try {
@@ -1418,28 +1467,28 @@ class UnicornHost {
       this.engine = e;
       this.selfTestResult = {
         ok: r0 === 0x37 && r1 === 0x333,
-        mode: 'unicorn.js-arm',
+        mode: 'mega16-arm',
         r0,
         r1,
-        message: `Unicorn.js ARM backend online: r0=0x${r0.toString(16)}, r1=0x${r1.toString(16)}.`,
+        message: `Mega 16 ARM backend online: r0=0x${r0.toString(16)}, r1=0x${r1.toString(16)}.`,
       };
       return this.selfTestResult;
     } catch (error) {
-      this.selfTestResult = { ok: false, mode: 'fallback', message: `Unicorn.js failed self-test: ${error.message}` };
+      this.selfTestResult = { ok: false, mode: 'fallback', message: `Mega 16 ARM backend failed self-test: ${error.message}` };
       return this.selfTestResult;
     }
   }
 
   createArmMachine(memoryBase = 0x10000, memorySize = 1024 * 1024) {
-    if (!this.detect()) throw new Error('Unicorn.js is not available.');
+    if (!this.detect()) throw new Error('Mega 16 ARM backend is not available.');
     const uc = this.uc;
     const e = new uc.Unicorn(uc.ARCH_ARM, uc.MODE_ARM);
     e.mem_map(memoryBase, memorySize, uc.PROT_ALL);
-    return new UnicornArmMachine(uc, e, memoryBase, memorySize);
+    return new Mega16ArmMachine(uc, e, memoryBase, memorySize);
   }
 }
 
-class UnicornArmMachine {
+class Mega16ArmMachine {
   constructor(uc, engine, memoryBase, memorySize) {
     this.uc = uc;
     this.engine = engine;
@@ -1477,7 +1526,7 @@ class UnicornArmMachine {
 
   check(addr, length) {
     if (addr < this.memoryBase || addr + length > this.memoryBase + this.memorySize) {
-      throw new Error('Unicorn machine memory access is outside mapped memory.');
+      throw new Error('Mega 16 ARM machine memory access is outside mapped memory.');
     }
   }
 }
@@ -1487,7 +1536,7 @@ class UnicornArmMachine {
 // ===== console.mjs =====
 
 const API_BINDINGS = [
-  'WIDTH','HEIGHT','cls','camera','clip','color','pal','palt','pset','pget','line','rect','rectfill','circ','circfill','oval','ovalfill','print','spr','sspr','map','mget','mset','fget','fset','btn','btnp','key','keyp','mouse','mousep','lockmouse','sfx','beep','rnd','flr','ceil','abs','sgn','min','max','mid','sin','cos','atan2','sqrt','time','stat','reload','loadit','cartloaded','cartname','cartaddr','cartbytes','cartdata','dset','dget','memcpy','memset','peek','poke','trace'
+  'WIDTH','HEIGHT','BITS','SYSTEM','cls','camera','clip','color','rgb','pal','palt','pset','pget','line','rect','rectfill','circ','circfill','oval','ovalfill','print','spr','sspr','map','mget','mset','fget','fset','btn','btnp','key','keyp','mouse','mousep','lockmouse','sfx','beep','rnd','flr','ceil','abs','sgn','min','max','mid','sin','cos','atan2','sqrt','time','stat','reload','loadit','cartloaded','cartname','cartaddr','cartbytes','cartdata','dset','dget','memcpy','memset','peek','poke','trace'
 ];
 
 class FantasyConsole {
@@ -1495,7 +1544,7 @@ class FantasyConsole {
     this.display = new Display(canvas);
     this.input = new InputState(window, canvas);
     this.audio = new AudioHost();
-    this.unicorn = new UnicornHost(message => this.log(message));
+    this.unicorn = new Mega16ArmHost(message => this.log(message));
     this.log = log;
     this.fps = fps;
     this.system = null;
@@ -1583,7 +1632,7 @@ class FantasyConsole {
     const code = fs.readText(codePath);
     const compiledAssembly = meta.assembly && fs.has(meta.assembly) ? fs.readText(meta.assembly) : '';
     const compiledBytecode = meta.bytecode && fs.has(meta.bytecode) ? fs.readFile(meta.bytecode) : null;
-    if (compiledBytecode && readFixedString(compiledBytecode, 0, 8) !== 'U8BCASM1') {
+    if (compiledBytecode && !['M16BCASM', 'U8BCASM1'].includes(readFixedString(compiledBytecode, 0, 8))) {
       throw new Error(`Invalid compiled cart bytecode header in ${meta.bytecode}`);
     }
     return {
@@ -1633,7 +1682,7 @@ class FantasyConsole {
     this.display.reset();
     this.cartError = null;
     if (typeof this.cartModule._init === 'function') this.safeCall('_init');
-    this.log(`running cart ${this.cartName}${cart.compiledBytecode ? ' with U8BC bytecode' : ''}`);
+    this.log(`running cart ${this.cartName}${cart.compiledBytecode ? ' with M16BC bytecode' : ''}`);
   }
 
   compileCart(source, filename = '/cart/main.js') {
@@ -1752,7 +1801,7 @@ class FantasyConsole {
     const d = this.display;
     d.cls(1);
     d.rect(0, 0, 127, 127, 12);
-    d.print('UNICORN-8', 46, 36, 10);
+    d.print('MEGA 16', 46, 36, 10);
     d.print('NO CART LOADED :(', 31, 50, 8);
     d.print('load a cart image', 31, 62, 7);
     d.print('system: ' + (this.system?.kernel?.version || 'none'), 20, 74, 6);
@@ -1761,11 +1810,12 @@ class FantasyConsole {
   makeAPI() {
     const fc = this;
     const api = {
-      WIDTH, HEIGHT,
+      WIDTH, HEIGHT, BITS: COLOR_DEPTH_BITS, SYSTEM: SYSTEM_NAME,
       cls: c => fc.display.cls(c ?? 0),
       camera: (x = 0, y = 0) => fc.display.camera(x, y),
       clip: (x = 0, y = 0, w = WIDTH, h = HEIGHT) => fc.display.clip(x, y, w, h),
-      color: c => { fc.display.color = c & 15; },
+      color: c => { fc.display.color = Number(c) || 0; },
+      rgb: (r = 0, g = 0, b = 0) => 0x10000 | Display.rgb565(r, g, b),
       pal: (c0 = null, c1 = null) => fc.display.pal(c0, c1),
       palt: (c = null, t = true) => fc.display.palt(c, t),
       pset: (x, y, c) => fc.display.pset(x, y, c ?? fc.display.color),
@@ -1841,6 +1891,8 @@ class FantasyConsole {
       case 2: return this.cartName;
       case 3: return this.system?.kernel?.name || '';
       case 4: return this.unicorn.selfTestResult?.mode || 'unknown';
+      case 5: return COLOR_DEPTH_BITS;
+      case 6: return SYSTEM_NAME;
       default: return 0;
     }
   }
@@ -2017,9 +2069,9 @@ function compileJavaScriptToU8Assembly(source, filename = '/cart/main.js') {
   if (!window.acorn) throw new Error('Acorn parser library is required to compile cart JavaScript.');
   const ast = window.acorn.parse(source, { ecmaVersion: 2020, sourceType: 'script', allowReturnOutsideFunction: false });
   const out = [
-    '; Unicorn-8 assembly generated from JavaScript',
+    '; Mega 16 assembly generated from JavaScript',
     `; source ${filename}`,
-    '.target u8bc-v1',
+    '.target m16bc-v1',
     '.requires acorn-js-parser',
   ];
   compileStatementToU8Asm(ast, out);
@@ -2029,9 +2081,9 @@ function compileJavaScriptToU8Assembly(source, filename = '/cart/main.js') {
 
 function assembleU8Assembly(assembly) {
   const lines = assembly.split(/\r?\n/).map(line => line.trim()).filter(line => line && !line.startsWith(';'));
-  const payload = encoder.encode(JSON.stringify({ format: 'U8BC-v1', lines }, null, 2));
+  const payload = encoder.encode(JSON.stringify({ format: 'M16BC-v1', lines }, null, 2));
   const out = new Uint8Array(16 + payload.length);
-  out.set(encoder.encode('U8BCASM1'), 0);
+  out.set(encoder.encode('M16BCASM'), 0);
   const view = new DataView(out.buffer);
   view.setUint32(8, payload.length, true);
   view.setUint32(12, crc32(payload), true);
@@ -2041,8 +2093,8 @@ function assembleU8Assembly(assembly) {
 
 function compilerSourceText() {
   return [
-    '/* Unicorn-8 JavaScript to U8 assembly compiler.',
-    '   Uses Acorn for parsing and emits U8BC-v1 assembly plus assembled bytecode.',
+    '/* Mega 16 JavaScript to M16 assembly compiler.',
+    '   Uses Acorn for parsing and emits M16BC-v1 assembly plus assembled bytecode.',
     '   This source is embedded in system images as the cart compiler toolchain. */',
     escapeAsmString.toString(),
     jsNodeName.toString(),
@@ -2083,14 +2135,14 @@ function add(text) {
   while (lines.length > 13) lines.shift();
 }
 
-function prompt() { return 'C:\\U8>'; }
+function prompt() { return 'C:\\M16>'; }
 function up(s) { return String(s || '').toUpperCase(); }
 function hex(n) { return '$' + (n || 0).toString(16).toUpperCase().padStart(4, '0'); }
 function bytehex(n) { return (n & 255).toString(16).toUpperCase().padStart(2, '0'); }
 
 function make_u8dos_sys(versionMajor = 0, versionMinor = 97) {
   const bytes = new Uint8Array(64);
-  bytes.set([0x55, 0x38, 0x44, 0x53], 0); // U8DS
+  bytes.set([0x4D, 0x31, 0x36, 0x44], 0); // M16D
   bytes[4] = versionMajor;
   bytes[5] = versionMinor;
   bytes[6] = 16; // FILES
@@ -2130,10 +2182,10 @@ function reset_shell() {
   booting = true;
   add('TYPE LOADIT ONCE YOUVE LOADED A CART');
   files = {
-    'U8DOS.SYS': make_u8dos_sys(),
-    'COMMAND.COM': new Uint8Array([0x55,0x38,0x43,0x4F,0x4D,0x01,0x00,0x00]),
-    'README.TXT': 'U8DOS is the embedded system cartridge.\nLoad a regular cart image, then type LOADIT.\nPress Escape from a running cart to return here.',
-    'CONFIG.SYS': 'DEVICE=U8ANSI.SYS\nFILES=16\nBUFFERS=8\nSHELL=COMMAND.COM',
+    'M16DOS.SYS': make_u8dos_sys(),
+    'COMMAND.COM': new Uint8Array([0x4D,0x31,0x36,0x43,0x4F,0x4D,0x01,0x00]),
+    'README.TXT': 'M16DOS is the embedded system cartridge.\nLoad a regular cart image, then type LOADIT.\nPress Escape from a running cart to return here.',
+    'CONFIG.SYS': 'DEVICE=M16ANSI.SYS\nFILES=16\nBUFFERS=8\nSHELL=COMMAND.COM',
     'AUTOEXEC.BAT': '@ECHO OFF\nVER\nDIR',
     'NOTES.TXT': 'Use EDIT filename to create or replace a small text file.',
     'LOADIT.COM': new Uint8Array([0x55,0x38,0x43,0x4F,0x4D,0x02,0x00,0x00]),
@@ -2154,10 +2206,10 @@ function reset_shell() {
 }
 
 function load_kernel() {
-  const sys = files['U8DOS.SYS'];
-  if (!(sys instanceof Uint8Array) || sys[0] !== 0x55 || sys[1] !== 0x38 || sys[2] !== 0x44 || sys[3] !== 0x53) {
+  const sys = files['M16DOS.SYS'];
+  if (!(sys instanceof Uint8Array) || sys[0] !== 0x4D || sys[1] !== 0x31 || sys[2] !== 0x36 || sys[3] !== 0x44) {
     kernel = { version: 'CORRUPT', files: 0, buffers: 0, api: '' };
-    env = { version: 'CORRUPT', path: 'C:\\U8;C:\\DOS', comspec: 'COMMAND.COM' };
+    env = { version: 'CORRUPT', path: 'C:\\M16;C:\\DOS', comspec: 'COMMAND.COM' };
     return false;
   }
   let crc = 0;
@@ -2175,15 +2227,15 @@ function load_kernel() {
   };
   env = {
     version: kernel.version,
-    path: 'C:\\U8;C:\\DOS',
+    path: 'C:\\M16;C:\\DOS',
     comspec,
   };
   return ok;
 }
 
 function dir() {
-  add(' Volume in drive C is U8DOS');
-  add(' Directory of C:\\U8');
+  add(' Volume in drive C is M16DOS');
+  add(' Directory of C:\\M16');
   add('');
   for (const [name, body] of Object.entries(files)) {
     const [base, ext = ''] = name.split('.');
@@ -2220,7 +2272,7 @@ function write_file(args) {
 
 function edit_file(name) {
   const file = dos_name(name || 'NOTES.TXT');
-  files[file] = 'Edited in U8DOS at ' + new Date().toLocaleTimeString();
+  files[file] = 'Edited in M16DOS at ' + new Date().toLocaleTimeString();
   add('EDIT saved ' + file);
 }
 
@@ -2272,7 +2324,7 @@ function run_loadit() {
 
 function kernel_status() {
   const ok = load_kernel();
-  add(ok ? 'U8DOS.SYS loaded' : 'U8DOS.SYS CORRUPT');
+  add(ok ? 'M16DOS.SYS loaded' : 'M16DOS.SYS CORRUPT');
   add('Version ' + kernel.version);
   add('FILES=' + kernel.files + ' BUFFERS=' + kernel.buffers);
   add('COMSPEC=' + env.comspec);
@@ -2280,7 +2332,7 @@ function kernel_status() {
 }
 
 function corrupt_file(name) {
-  const file = dos_name(name || 'U8DOS.SYS');
+  const file = dos_name(name || 'M16DOS.SYS');
   const body = files[file];
   if (!(body instanceof Uint8Array)) { add('Not a binary - ' + file); return; }
   if (!body.length) { add('Empty binary - ' + file); return; }
@@ -2295,7 +2347,7 @@ function run_com(name) {
   const app = fileApps[file];
   if (!app) {
     add('Cannot execute ' + file);
-    add('Not a U8DOS .COM app.');
+    add('Not a M16DOS .COM app.');
     return true;
   }
   add('Loading ' + file + '...');
@@ -2303,7 +2355,7 @@ function run_com(name) {
   if (app === 'LOADIT') { run_loadit(); return true; }
   if (app === 'HELLO') { add('Hello from ' + file + '!'); return true; }
   if (app === 'CLOCK') { add('CLOCK.COM ' + new Date().toLocaleTimeString()); return true; }
-  if (app === 'ABOUT') { add('U8DOS ' + env.version + '\nU8DOS.SYS backs the kernel settings.\n.COM apps run from the in-memory file table.'); return true; }
+  if (app === 'ABOUT') { add('M16DOS ' + env.version + '\nM16DOS.SYS backs the kernel settings.\n.COM apps run from the in-memory file table.'); return true; }
   if (app === 'FILES') { add(Object.keys(files).join('\n')); return true; }
   add('App loader error - ' + file);
   return true;
@@ -2317,13 +2369,13 @@ function run_command(raw) {
   const arg = text.slice(command.length).trim();
   if (command === 'CLS') { lines = []; return; }
   if (command === 'HELP') { add('Commands: DIR CLS VER MEM TYPE WRITE EDIT COPY REN DEL CORRUPT SYS KERNEL LOADSYS PATH SET CART LOADIT BOOT HELP\nApps: COMMAND HELLO CLOCK ABOUT FILES LOADIT'); return; }
-  if (command === 'VER') { load_kernel(); add('U8DOS System Kernel ' + env.version); return; }
+  if (command === 'VER') { load_kernel(); add('M16DOS System Kernel ' + env.version); return; }
   if (command === 'DIR') { dir(); return; }
-  if (command === 'MEM') { add('32768 bytes Unicorn-8 RAM'); add((cartloaded() ? cartbytes() : 0) + ' bytes staged cart image'); return; }
+  if (command === 'MEM') { add('32768 bytes Mega 16 RAM'); add((cartloaded() ? cartbytes() : 0) + ' bytes staged cart image'); return; }
   if (command === 'PATH') { add('PATH=' + env.path); return; }
   if (command === 'SET') { add('COMSPEC=' + env.comspec + '\nPATH=' + env.path); return; }
   if (command === 'SYS' || command === 'KERNEL') { kernel_status(); return; }
-  if (command === 'LOADSYS') { load_kernel(); add('Reloaded U8DOS.SYS'); return; }
+  if (command === 'LOADSYS') { load_kernel(); add('Reloaded M16DOS.SYS'); return; }
   if (command === 'TYPE') { type_file(arg); return; }
   if (command === 'WRITE') { write_file(arg); return; }
   if (command === 'EDIT') { edit_file(arg); return; }
@@ -2363,7 +2415,7 @@ function _init() {
   if (globalThis.__u8dosSystemKeyHandler) globalThis.removeEventListener('keydown', globalThis.__u8dosSystemKeyHandler, true);
   globalThis.__u8dosSystemKeyHandler = handleKey;
   globalThis.addEventListener('keydown', handleKey, true);
-  trace('U8DOS system cartridge booted. Type HELP.');
+  trace('M16DOS system cartridge booted. Type HELP.');
   trace('TYPE LOADIT ONCE YOUVE LOADED A CART');
 }
 
@@ -2371,15 +2423,15 @@ function _update() {
   blink++;
   if (!booting) return;
   bootStep++;
-  if (bootStep === 1) add('U8BOOT system loader v0.96');
-  if (bootStep === 15) { load_kernel(); add('Loading U8DOS.SYS v' + kernel.version); }
+  if (bootStep === 1) add('M16BOOT system loader v0.96');
+  if (bootStep === 15) { load_kernel(); add('Loading M16DOS.SYS v' + kernel.version); }
   if (bootStep === 30) add('Loading COMMAND.COM');
   if (bootStep === 45) add('Installing cart memory loader');
   if (bootStep === 60) add('Ready. Load a regular cart, then type LOADIT.');
   if (bootStep > 78) {
     booting = false;
     add('');
-    add('U8DOS System Kernel ' + env.version);
+    add('M16DOS System Kernel ' + env.version);
     add('Type HELP for commands.');
   }
 }
@@ -2388,7 +2440,7 @@ function _draw() {
   cls(0);
   rect(0, 0, 127, 127, 1);
   rectfill(0, 0, 127, 8, 1);
-  print('U8DOS SYSTEM', 2, 1, 7);
+  print('M16DOS SYSTEM', 2, 1, 7);
   print(cartloaded() ? 'CART READY' : 'NO CART', 78, 1, cartloaded() ? 11 : 8);
   let y = 13;
   for (const line of lines) {
@@ -2403,13 +2455,13 @@ function _draw() {
 }
 `;
   const kernel = {
-    name: 'U8DOS System Cartridge',
+    name: 'M16DOS System Cartridge',
     version: '0.96',
     main: '/sys/main.js',
     screen: { width: 128, height: 128, fps: 30 },
-    cpu: { backend: 'unicorn.js optional ARM backend + JavaScript fantasy kernel' },
+    cpu: { backend: 'Mega 16 ARM backend + JavaScript fantasy kernel' },
     imageFormat: {
-      magic: 'MBR/FAT16 for carts; U8IMG01 system container',
+      magic: 'MBR/FAT16 for carts; M16IMG1 system container',
       sectorSize: 512,
       systemBootable: true,
       cartBootable: false,
@@ -2417,19 +2469,19 @@ function _draw() {
     },
     compiler: {
       parser: 'Acorn',
-      assembly: 'U8BC-v1',
-      bytecodeMagic: 'U8BCASM1',
+      assembly: 'M16BC-v1',
+      bytecodeMagic: 'M16BCASM',
     },
     bootloader: {
-      path: '/sys/bootloader.u8asm',
+      path: '/sys/bootloader.m16asm',
       autoChainload: false,
       cartLoadAddress: 0x4000,
-      behavior: 'Stage regular carts in memory. Type LOADIT in U8DOS to jump to the staged cart.',
+      behavior: 'Stage regular carts in memory. Type LOADIT in M16DOS to jump to the staged cart.',
     },
   };
   const bootloader = [
-    '; U8DOS embedded system bootloader',
-    '.target u8-system',
+    '; M16DOS embedded system bootloader',
+    '.target m16-system',
     '.org $0000',
     'BOOT:',
     '  call SYS_INIT',
@@ -2442,18 +2494,18 @@ function _draw() {
     '',
   ].join('\n');
   return createImage({
-    label: 'U8DOS-SYSTEM',
+    label: 'M16DOS-SYSTEM',
     type: 'system',
     bootable: true,
     bootFile: '/sys/kernel.json',
     files: {
       '/sys/kernel.json': kernel,
       '/sys/main.js': systemMain,
-      '/sys/bootloader.u8asm': bootloader,
+      '/sys/bootloader.m16asm': bootloader,
       '/sys/palette.bin': paletteBin(),
-      '/sys/compiler/js-to-u8asm.js': compilerSourceText(),
-      '/sys/compiler/readme.txt': 'Complete Unicorn-8 cart compiler source. Uses Acorn to parse JavaScript, emits U8BC-v1 assembly, then assembles U8BCASM1 bytecode artifacts.',
-      '/sys/readme.txt': 'Embedded U8DOS system image. Load a regular cart image, then type LOADIT. Press Escape while a cart runs to return to DOS.',
+      '/sys/compiler/js-to-m16asm.js': compilerSourceText(),
+      '/sys/compiler/readme.txt': 'Complete Mega 16 cart compiler source. Uses Acorn to parse JavaScript, emits M16BC-v1 assembly, then assembles M16BCASM bytecode artifacts.',
+      '/sys/readme.txt': 'Embedded M16DOS system image. Load a regular cart image, then type LOADIT. Press Escape while a cart runs to return to DOS.',
     },
   });
 }
@@ -2617,21 +2669,21 @@ function _draw(){
     files: {
       '/cart/meta.jso': {
         title: 'Star Hopper',
-        author: 'Unicorn-8',
+        author: 'Mega 16',
         main: '/cart/main.js',
         assembly: '/cart/main.asm',
         bytecode: '/cart/main.bc',
         compiler: '/cart/compiler/jsc.js',
-        format: 'mbr-fat16-u8cart.img',
+        format: 'mbr-fat16-m16cart.img',
       },
       '/meta.jso': {
         title: 'Star Hopper',
-        author: 'Unicorn-8',
+        author: 'Mega 16',
         main: '/cart/main.js',
         assembly: '/cart/main.asm',
         bytecode: '/cart/main.bc',
         compiler: '/cart/compiler/jsc.js',
-        format: 'mbr-fat16-u8cart.img',
+        format: 'mbr-fat16-m16cart.img',
       },
       '/cart/main.js': code,
       '/cart/main.asm': assembly,
@@ -2640,8 +2692,8 @@ function _draw(){
       '/cart/sprites.bin': sheet.dumpPacked(),
       '/cart/map.bin': map.dump(),
       '/cart/flags.bin': flags,
-      '/cart/readme.txt': 'Non-bootable cartridge disk image. MBR sector 0 has signature 55 AA and an inactive FAT16 partition. JavaScript source, generated U8 assembly, assembled U8BC bytecode, and compiler source are all included.',
-      '/readme.txt': 'Unicorn-8 non-bootable FAT16 cartridge disk. Open /cart for source, assembly, bytecode, data, and compiler files.',
+      '/cart/readme.txt': 'Non-bootable cartridge disk image. MBR sector 0 has signature 55 AA and an inactive FAT16 partition. JavaScript source, generated M16 assembly, assembled M16BC bytecode, and compiler source are all included.',
+      '/readme.txt': 'Mega 16 non-bootable FAT16 cartridge disk. Open /cart for source, assembly, bytecode, data, and compiler files.',
     },
   });
 }
@@ -2740,8 +2792,8 @@ window.addEventListener('keydown', event => {
   renderInfo();
 }, true);
 
-$('#export-system').addEventListener('click', () => saveBytesAsDownload(builtSystem, 'unicorn8-system.u8sys.img'));
-$('#export-cart').addEventListener('click', () => saveBytesAsDownload(builtCart, 'star-hopper.u8cart.img'));
+$('#export-system').addEventListener('click', () => saveBytesAsDownload(builtSystem, 'mega16-system.m16sys.img'));
+$('#export-cart').addEventListener('click', () => saveBytesAsDownload(builtCart, 'star-hopper.m16cart.img'));
 $('#reset-builtins').addEventListener('click', () => {
   builtSystem = buildSystemImage();
   builtCart = buildDemoCartImage();
@@ -2755,7 +2807,7 @@ window.addEventListener('keydown', () => fc.audio.ensure(), { once: true });
 
 bootDefault();
 log('controls: arrows/wasd move, z/j/space jump, x/k/enter action');
-log('format: system uses U8IMG boot metadata; carts are non-bootable MBR/FAT16 disks with compiled U8BC artifacts');
+log('format: system uses M16IMG boot metadata; carts are non-bootable MBR/FAT16 disks with compiled M16BC artifacts');
 
 
 })();

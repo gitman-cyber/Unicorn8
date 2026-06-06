@@ -9,7 +9,10 @@ const COLLECTIONS = new Set(['images', 'comments']);
 export default {
   async fetch(request, env) {
     if (request.method === 'OPTIONS') {
-      return json({}, 204);
+      return new Response(null, {
+        status: 204,
+        headers: CORS_HEADERS,
+      });
     }
 
     const url = new URL(request.url);
